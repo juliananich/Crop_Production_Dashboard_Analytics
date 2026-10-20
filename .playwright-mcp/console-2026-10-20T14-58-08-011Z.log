@@ -1,0 +1,7 @@
+[     906ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8000/favicon.ico:0
+[    1544ms] RangeError: Maximum call stack size exceeded
+    at ingest (http://localhost:8000/app.js:136:19)
+    at Object.complete (http://localhost:8000/app.js:144:43)
+    at l.parseChunk (https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js:7:7072)
+    at l._chunkLoaded (https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js:7:8640)
+    at XMLHttpRequest.<anonymous> (https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js:7:18728)

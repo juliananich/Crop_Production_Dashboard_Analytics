@@ -1,0 +1,40 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - heading "🌾 Loading crop_production.csv…" [level=2] [ref=e4]
+    - paragraph [ref=e5]: Parsing 246,091 records in your browser.
+  - banner [ref=e6]:
+    - generic [ref=e7]:
+      - heading "🌾 India Crop Production — Descriptive Analytics" [level=1] [ref=e8]
+      - paragraph [ref=e9]: Ministry of Agriculture & Farmers Welfare (via Kaggle) · 1997–2015 · units differ by crop (coconut is counted in nuts)
+  - generic [ref=e10]:
+    - complementary [ref=e11]:
+      - heading "Filters" [level=3] [ref=e12]
+      - generic [ref=e13]:
+        - generic [ref=e14]: Dataset
+        - generic [ref=e15]:
+          - button "Cleaned" [ref=e16] [cursor=pointer]
+          - button "Raw" [ref=e17] [cursor=pointer]
+        - text: Raw keeps rows with missing Production (excluded from production totals).
+      - generic [ref=e18]:
+        - generic [ref=e19]: Crop year
+        - generic [ref=e20]:
+          - spinbutton [ref=e21]: "1997"
+          - generic [ref=e22]: to
+          - spinbutton [ref=e23]: "2015"
+      - generic [ref=e24]: State
+      - generic [ref=e26]: District
+      - generic [ref=e28]: Season
+      - generic [ref=e30]: Crop
+      - generic [ref=e32]:
+        - generic [ref=e33]: "Top-N items: 10"
+        - slider [ref=e34]: "10"
+      - generic [ref=e35] [cursor=pointer]:
+        - checkbox "Exclude Coconut" [ref=e36]
+        - text: Exclude Coconut
+      - generic [ref=e37] [cursor=pointer]:
+        - checkbox "Log scale (distributions / scatter)" [checked] [ref=e38]
+        - text: Log scale (distributions / scatter)
+      - button "Reset filters" [ref=e39] [cursor=pointer]
+      - paragraph
+    - main [ref=e40]:
+      - navigation
