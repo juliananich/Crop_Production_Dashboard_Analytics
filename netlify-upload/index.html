@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harvest Ledger · India Crop Production</title>
-  <link rel="stylesheet" href="styles.css?v=3">
+  <title>Harvest Ledger · Crop Supply Scorecard</title>
+  <link rel="stylesheet" href="styles.css?v=5">
   <script src="plotly.min.js" charset="utf-8"></script>
   <script src="data.js"></script>
+  <script src="model.js"></script>
 </head>
 <body>
   <div id="loader" class="loader">
@@ -24,7 +25,7 @@
           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 22V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
             <path d="M12 9c0-3 2-5 5-5 0 3-2 5-5 5zM12 13c0-3-2-5-5-5 0 3 2 5 5 5zM12 17c0-3 2-5 5-5 0 3-2 5-5 5z" fill="currentColor"/></svg>
         </span>
-        <div><b>Harvest Ledger</b><span>India crop production · 1997–2015</span></div>
+        <div><b>Harvest Ledger</b><span>Crop supply scorecard for agriculture planners · India 1997–2015</span></div>
       </div>
       <div class="hdr-right">
         <span class="pill" id="datasetPill">Cleaned data</span>
@@ -42,7 +43,6 @@
       <div class="fgroup"><label for="y0">Years</label>
         <select id="y0"></select><span>→</span><select id="y1"></select></div>
       <div class="fgroup"><label>State</label><div class="ms" id="ms-s"></div></div>
-      <div class="fgroup"><label>District</label><div class="ms" id="ms-d"></div></div>
       <div class="fgroup"><label>Season</label><div class="ms" id="ms-se"></div></div>
       <div class="fgroup"><label>Crop</label><div class="ms" id="ms-c"></div></div>
       <div class="fgroup"><label for="topn">Show</label>
@@ -60,6 +60,6 @@
   <footer class="foot">Source: Ministry of Agriculture &amp; Farmers Welfare, India (via Kaggle · AravindPCoder). Units differ by crop — coconut is recorded in nuts, so cross-crop totals describe recorded volume, not weight or value.</footer>
 
   <div id="tip" class="tip" hidden></div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

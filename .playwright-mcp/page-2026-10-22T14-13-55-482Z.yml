@@ -1,0 +1,311 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - generic [ref=f3e8]:
+        - generic [ref=f3e9]: Harvest Ledger
+        - text: Crop supply scorecard for agriculture planners · India 1997–2015
+      - generic [ref=f3e10]:
+        - generic [ref=f3e11]: Cleaned data
+        - button "Switch light / dark theme" [ref=f3e12] [cursor=pointer]: ◐
+    - navigation "Dashboard pages" [ref=f3e13]:
+      - generic [ref=f3e14]: Planner view
+      - button "Scorecard" [ref=f3e15] [cursor=pointer]
+      - button "Trends" [ref=f3e16] [cursor=pointer]
+      - button "Crops" [ref=f3e17] [cursor=pointer]
+      - button "Regions" [ref=f3e18] [cursor=pointer]
+      - button "Seasons" [ref=f3e19] [cursor=pointer]
+      - generic [ref=f3e20]: Advanced model
+      - button "Predict yield" [ref=f3e21] [cursor=pointer]
+      - button "Recommend" [ref=f3e22] [cursor=pointer]
+      - generic [ref=f3e23]: Reference
+      - button "Data notes" [ref=f3e24] [cursor=pointer]
+  - region "Filters" [ref=f3e25]:
+    - generic [ref=f3e26]:
+      - group "Dataset" [ref=f3e27]:
+        - button "Cleaned" [ref=f3e28] [cursor=pointer]
+        - button "Raw" [ref=f3e29] [cursor=pointer]
+      - generic [ref=f3e30]:
+        - generic [ref=f3e31]: Years
+        - combobox "Years" [ref=f3e32]:
+          - option "1997" [selected]
+          - option "1998"
+          - option "1999"
+          - option "2000"
+          - option "2001"
+          - option "2002"
+          - option "2003"
+          - option "2004"
+          - option "2005"
+          - option "2006"
+          - option "2007"
+          - option "2008"
+          - option "2009"
+          - option "2010"
+          - option "2011"
+          - option "2012"
+          - option "2013"
+          - option "2014"
+          - option "2015"
+        - generic [ref=f3e33]: →
+        - combobox [ref=f3e34]:
+          - option "1997"
+          - option "1998"
+          - option "1999"
+          - option "2000"
+          - option "2001"
+          - option "2002"
+          - option "2003"
+          - option "2004"
+          - option "2005"
+          - option "2006"
+          - option "2007"
+          - option "2008"
+          - option "2009"
+          - option "2010"
+          - option "2011"
+          - option "2012"
+          - option "2013"
+          - option "2014"
+          - option "2015" [selected]
+      - generic [ref=f3e35]:
+        - generic [ref=f3e36]: State
+        - button "All states" [ref=f3e38] [cursor=pointer]:
+          - generic [aria-hidden] [ref=f3e40]: ▾
+      - generic [ref=f3e41]:
+        - generic [ref=f3e42]: Season
+        - button "All seasons" [ref=f3e44] [cursor=pointer]:
+          - generic [aria-hidden] [ref=f3e46]: ▾
+      - generic [ref=f3e47]:
+        - generic [ref=f3e48]: Crop
+        - button "All crops" [ref=f3e50] [cursor=pointer]:
+          - generic [aria-hidden] [ref=f3e52]: ▾
+      - generic [ref=f3e53]:
+        - generic [ref=f3e54]: Show
+        - combobox "Show" [ref=f3e55]:
+          - option "Top 5"
+          - option "Top 10" [selected]
+          - option "Top 15"
+          - option "Top 20"
+      - generic [ref=f3e56] [cursor=pointer]:
+        - checkbox "Exclude coconut" [ref=f3e57]
+        - text: Exclude coconut
+    - generic [ref=f3e59]: 242,361 of 242,361 records
+  - main [ref=f3e61]:
+    - generic [ref=f3e62]:
+      - heading "Scorecard" [level=2] [ref=f3e63]
+      - paragraph [ref=f3e64]: "For agriculture planners: how much is produced, how fast it is changing, and how exposed supply is to one crop, a few states or a bad year."
+    - generic [ref=f3e65]: Coconut is dominating the totals. It is recorded in nuts, not tonnes, so it dwarfs every other crop. Switch on Exclude coconut in the filter bar for a fairer comparison.
+    - generic [ref=f3e66]:
+      - generic [ref=f3e67]:
+        - text: Total production
+        - generic [ref=f3e68]: 141.18B
+        - generic [ref=f3e69]: recorded volume, 1997–2015
+      - generic [ref=f3e72]:
+        - text: Annual growth
+        - generic [ref=f3e73]: +2.5%
+        - emphasis [ref=f3e74]: Growing
+        - generic [ref=f3e75]: compound, 1998–2014
+      - generic [ref=f3e76]:
+        - text: Top-crop share
+        - generic [ref=f3e77]: 92.1%
+        - emphasis [ref=f3e78]: High dependence
+        - generic [ref=f3e79]: Coconut of all production
+      - generic [ref=f3e80]:
+        - text: Top-3 state share
+        - generic [ref=f3e81]: 90.2%
+        - emphasis [ref=f3e82]: Highly concentrated
+        - generic [ref=f3e83]: Kerala, Andhra Pradesh, Tamil Nadu
+      - generic [ref=f3e84]:
+        - text: Crops for 80% of output
+        - generic [ref=f3e85]: "1"
+        - emphasis [ref=f3e86]: Very narrow
+        - generic [ref=f3e87]: out of 124 crops
+      - generic [ref=f3e88]:
+        - text: Output stability
+        - generic [ref=f3e89]: "0.26"
+        - emphasis [ref=f3e90]: Variable
+        - generic [ref=f3e91]: variation of yearly totals (lower = steadier)
+    - paragraph [ref=f3e92]: "Ratings are rules of thumb. Dependence: top crop over 50% is high, 30–50% moderate. Concentration: top 3 states over 75% is high, 50–75% concentrated. Stability: variation under 0.15 is steady, 0.15–0.30 variable, above 0.30 volatile. Growth: within ±2% a year counts as flat."
+    - generic [ref=f3e93]:
+      - heading "Key takeaways for the current selection" [level=4] [ref=f3e94]
+      - list [ref=f3e95]:
+        - listitem [ref=f3e96]: "Crop risk: Coconut supplies 92.1% of recorded production and 1 crop cover 80%. A shock to this one crop would move the whole total, so it is the first thing to monitor."
+        - listitem [ref=f3e97]: "Regional risk: Kerala leads with 69.3%; the top 3 states hold 90.2%. Supply is geographically concentrated, so a regional drought or flood matters nationally."
+        - listitem [ref=f3e98]: "Momentum: production grew about 2.5% a year between 1998 and 2014, and peaked in 2011."
+        - listitem [ref=f3e99]: "Reliability: yearly output varies by 0.26 (variable), so plan buffers generously."
+    - article [ref=f3e101]:
+      - generic [ref=f3e102]:
+        - generic [ref=f3e103]:
+          - heading "Production through time" [level=3] [ref=f3e104]
+          - paragraph [ref=f3e105]: Sum of recorded production per crop year
+        - generic [ref=f3e106]:
+          - button "Chart" [ref=f3e107] [cursor=pointer]
+          - button "Table" [ref=f3e108] [cursor=pointer]
+      - generic [ref=f3e109]:
+        - generic:
+          - generic:
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: "1998"
+                    - generic: "2000"
+                    - generic: "2002"
+                    - generic: "2004"
+                    - generic: "2006"
+                    - generic: "2008"
+                    - generic: "2010"
+                    - generic: "2012"
+                    - generic: "2014"
+                  - generic:
+                    - generic: "0"
+                    - generic: 5B
+                    - generic: 10B
+                    - generic: 15B
+            - img:
+              - generic: Production
+            - generic [ref=f3e123]:
+              - generic [ref=f3e125] [cursor=pointer]
+              - generic [ref=f3e128]:
+                - generic [ref=f3e129] [cursor=pointer]
+                - generic [ref=f3e132] [cursor=pointer]
+                - generic [ref=f3e135] [cursor=pointer]
+                - generic [ref=f3e138] [cursor=pointer]
+              - generic [ref=f3e141]:
+                - generic [ref=f3e142] [cursor=pointer]
+                - generic [ref=f3e145] [cursor=pointer]
+                - generic [ref=f3e148] [cursor=pointer]
+                - generic [ref=f3e151] [cursor=pointer]
+      - generic [ref=f3e154]:
+        - paragraph [ref=f3e155]: How to read itEach point adds up every record reported for that crop year. A rising line means more recorded output.
+        - paragraph [ref=f3e156]: What it means nowOutput peaked in 2011 at 14.31B, 1.9× the average year (7.43B).
+        - paragraph [ref=f3e157]: Keep in mindThe first and last crop years have far fewer records, so the line drops at both edges. That is incomplete reporting, not a real collapse.
+    - generic [ref=f3e158]:
+      - article [ref=f3e159]:
+        - generic [ref=f3e160]:
+          - generic [ref=f3e161]:
+            - heading "Top 10 crops" [level=3] [ref=f3e162]
+            - paragraph [ref=f3e163]: By total recorded production
+          - generic [ref=f3e164]:
+            - button "Chart" [ref=f3e165] [cursor=pointer]
+            - button "Table" [ref=f3e166] [cursor=pointer]
+        - generic [ref=f3e167]:
+          - generic:
+            - generic:
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: 129.98B
+                              - generic: 5.54B
+                              - generic: 1.61B
+                              - generic: 1.33B
+                              - generic: 424.83M
+                              - generic: 297.00M
+                              - generic: 273.34M
+                              - generic: 181.56M
+                              - generic: 146.13M
+                              - generic: 141.84M
+                    - generic:
+                      - generic: "0"
+                      - generic: 20B
+                      - generic: 40B
+                      - generic: 60B
+                      - generic: 80B
+                      - generic: 100B
+                      - generic: 120B
+                    - generic:
+                      - generic: Soyabean
+                      - generic: Banana
+                      - generic: Jute
+                      - generic: Maize
+                      - generic: Cotton(lint)
+                      - generic: Potato
+                      - generic: Wheat
+                      - generic: Rice
+                      - generic: Sugarcane
+                      - generic: Coconut
+              - generic [ref=f3e181]:
+                - generic [ref=f3e183] [cursor=pointer]
+                - generic [ref=f3e186]:
+                  - generic [ref=f3e187] [cursor=pointer]
+                  - generic [ref=f3e190] [cursor=pointer]
+                  - generic [ref=f3e193] [cursor=pointer]
+                  - generic [ref=f3e196] [cursor=pointer]
+                - generic [ref=f3e199]:
+                  - generic [ref=f3e200] [cursor=pointer]
+                  - generic [ref=f3e203] [cursor=pointer]
+                  - generic [ref=f3e206] [cursor=pointer]
+                  - generic [ref=f3e209] [cursor=pointer]
+        - generic [ref=f3e212]:
+          - paragraph [ref=f3e213]: How to read itEach bar is one crop’s total recorded production. Longer means more volume.
+          - paragraph [ref=f3e214]: What it means nowCoconut holds 92.1%, 23.5× the next crop (Sugarcane).
+          - paragraph [ref=f3e215]: Keep in mindCrops are recorded in different units (coconut in nuts, most others in tonnes), so this compares recorded volume, not weight or value.
+      - article [ref=f3e216]:
+        - generic [ref=f3e217]:
+          - generic [ref=f3e218]:
+            - heading "Top 10 states" [level=3] [ref=f3e219]
+            - paragraph [ref=f3e220]: By total recorded production
+          - generic [ref=f3e221]:
+            - button "Chart" [ref=f3e222] [cursor=pointer]
+            - button "Table" [ref=f3e223] [cursor=pointer]
+        - generic [ref=f3e224]:
+          - generic:
+            - generic:
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: 97.88B
+                              - generic: 17.32B
+                              - generic: 12.08B
+                              - generic: 3.23B
+                              - generic: 2.11B
+                              - generic: 1.40B
+                              - generic: 1.26B
+                              - generic: 863.43M
+                              - generic: 718.22M
+                              - generic: 586.39M
+                    - generic:
+                      - generic: "0"
+                      - generic: 20B
+                      - generic: 40B
+                      - generic: 60B
+                      - generic: 80B
+                      - generic: 100B
+                    - generic:
+                      - generic: Punjab
+                      - generic: Andaman and Nicobar Islands
+                      - generic: Karnataka
+                      - generic: Maharashtra
+                      - generic: West Bengal
+                      - generic: Assam
+                      - generic: Uttar Pradesh
+                      - generic: Tamil Nadu
+                      - generic: Andhra Pradesh
+                      - generic: Kerala
+              - generic [ref=f3e238]:
+                - generic [ref=f3e240] [cursor=pointer]
+                - generic [ref=f3e243]:
+                  - generic [ref=f3e244] [cursor=pointer]
+                  - generic [ref=f3e247] [cursor=pointer]
+                  - generic [ref=f3e250] [cursor=pointer]
+                  - generic [ref=f3e253] [cursor=pointer]
+                - generic [ref=f3e256]:
+                  - generic [ref=f3e257] [cursor=pointer]
+                  - generic [ref=f3e260] [cursor=pointer]
+                  - generic [ref=f3e263] [cursor=pointer]
+                  - generic [ref=f3e266] [cursor=pointer]
+        - generic [ref=f3e269]:
+          - paragraph [ref=f3e270]: How to read itEach bar is a state’s total recorded production.
+          - paragraph [ref=f3e271]: What it means nowKerala contributes 69.3%, ahead of Andhra Pradesh (12.3%).
+          - paragraph [ref=f3e272]: Keep in mindA state ranks high either because it grows a lot or because it grows a high-volume crop such as coconut.
+  - contentinfo [ref=f3e273]: "Source: Ministry of Agriculture & Farmers Welfare, India (via Kaggle · AravindPCoder). Units differ by crop — coconut is recorded in nuts, so cross-crop totals describe recorded volume, not weight or value."

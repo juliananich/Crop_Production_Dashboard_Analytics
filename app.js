@@ -1,21 +1,17 @@
-/* Harvest Ledger — India crop production dashboard (vanilla JS + Plotly.js + PapaParse) */
+/* Harvest Ledger — India crop production dashboard (vanilla JS + Plotly.js) */
 'use strict';
 
 
 const PAL = ['#2f7d4f', '#d9962b', '#2b7a9b', '#c4572f', '#7a4e8c', '#6b8e23', '#b5651d', '#4d6a7a', '#a05195', '#8c8c3d'];
 const PAGES = [
-  ['Explore', [['overview', 'Overview'], ['trends', 'Trends'], ['crops', 'Crops'], ['regions', 'Regions'], ['seasons', 'Seasons']]],
-  ['Statistics', [['central', 'Central tendency'], ['spread', 'Spread & shape'], ['relations', 'Relationships']]],
-  ['Data', [['quality', 'Data quality'], ['records', 'Records'], ['dictionary', 'Dictionary']]],
+  ['Planner view', [['overview', 'Scorecard'], ['trends', 'Trends'], ['crops', 'Crops'], ['regions', 'Regions'], ['seasons', 'Seasons']]],
+  ['Advanced model', [['predict', 'Predict yield'], ['reco', 'Recommend']]],
+  ['Reference', [['notes', 'Data notes']]],
 ];
-const VARS = { p: 'Production', a: 'Area (ha)', yl: 'Yield (prod/ha)' };
-const GROUPS = { se: 'Season', c: 'Crop', s: 'State' };
-
 let RAW = [], CLEAN = [], RAW_NULLS = {}, YEAR_MIN = 1997, YEAR_MAX = 2015;
 const S = {
   dataset: 'Cleaned', y0: 1997, y1: 2015, topN: 10, noCoco: false, page: 'overview',
-  sel: { s: new Set(), d: new Set(), se: new Set(), c: new Set() },
-  cropFocus: null, scatterBy: 'se', log: true, variable: 'p', group: 'se', recView: 'filtered', recSearch: '', recPage: 0,
+  sel: { s: new Set(), se: new Set(), c: new Set() }, recoState: '',
 };
 let F = [], FP = [], Q = [], seq = 0, debounce;
 
@@ -34,7 +30,6 @@ function fmt(n) {
   return n.toFixed(2);
 }
 const yieldOf = (r) => (r.a > 0 && r.p != null ? r.p / r.a : null);
-const valueOf = (r, v) => (v === 'yl' ? yieldOf(r) : r[v]);
 const groupSum = (rows, key, val) => { const m = new Map(); for (const r of rows) m.set(r[key], (m.get(r[key]) || 0) + r[val]); return m; };
 const entries = (m, desc = true) => [...m.entries()].sort((a, b) => (desc ? b[1] - a[1] : a[1] - b[1]));
 const share = (part, whole) => (whole > 0 ? part / whole : 0);
@@ -44,44 +39,6 @@ function quantile(sorted, q) {
   const pos = (sorted.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
-function describe(values) {
-  const v = Float64Array.from(values).sort(), n = v.length;
-  const mean = sum(v) / n;
-  let m2 = 0;
-  for (const x of v) m2 += (x - mean) ** 2;
-  const variance = n > 1 ? m2 / (n - 1) : NaN, sd = Math.sqrt(variance);
-  let skew = NaN, kurt = NaN;
-  if (n > 3 && sd > 0) {
-    let s3 = 0, s4 = 0;
-    for (const x of v) { const z = (x - mean) / sd; s3 += z ** 3; s4 += z ** 4; }
-    skew = (n / ((n - 1) * (n - 2))) * s3;
-    kurt = ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * s4 - (3 * (n - 1) ** 2) / ((n - 2) * (n - 3));
-  }
-  const counts = new Map(); let mode = v[0], best = 0;
-  for (const x of v) { const c = (counts.get(x) || 0) + 1; counts.set(x, c); if (c > best) { best = c; mode = x; } }
-  const q1 = quantile(v, 0.25), q3 = quantile(v, 0.75), iqr = q3 - q1, lo = q1 - 1.5 * iqr, hi = q3 + 1.5 * iqr;
-  let out = 0, wl = v[n - 1], wh = v[0];
-  for (const x of v) { if (x < lo || x > hi) out++; else { if (x < wl) wl = x; if (x > wh) wh = x; } }
-  return { n, mean, median: quantile(v, 0.5), mode, sd, variance, cv: mean ? sd / Math.abs(mean) : NaN, min: v[0], max: v[n - 1],
-    range: v[n - 1] - v[0], q1, q3, iqr, p90: quantile(v, 0.9), p99: quantile(v, 0.99), skew, kurt, outliers: out, wl, wh };
-}
-function pearson(x, y) {
-  const n = x.length; if (n < 3) return NaN;
-  const mx = sum(x) / n, my = sum(y) / n; let sxy = 0, sxx = 0, syy = 0;
-  for (let i = 0; i < n; i++) { const a = x[i] - mx, b = y[i] - my; sxy += a * b; sxx += a * a; syy += b * b; }
-  return sxy / Math.sqrt(sxx * syy);
-}
-function ranks(a) {
-  const idx = Array.from(a.keys()).sort((i, j) => a[i] - a[j]), r = new Float64Array(a.length);
-  for (let i = 0; i < idx.length;) {
-    let j = i; while (j + 1 < idx.length && a[idx[j + 1]] === a[idx[i]]) j++;
-    const avg = (i + j) / 2 + 1; for (let k = i; k <= j; k++) r[idx[k]] = avg; i = j + 1;
-  }
-  return r;
-}
-const spearman = (x, y) => pearson(ranks(x), ranks(y));
-const strength = (r) => { const a = Math.abs(r); return a < .2 ? 'very weak' : a < .4 ? 'weak' : a < .6 ? 'moderate' : a < .8 ? 'strong' : 'very strong'; };
-const shapeWord = (s) => (s > 1 ? 'strongly right-skewed' : s > .5 ? 'moderately right-skewed' : s < -.5 ? 'left-skewed' : 'roughly symmetric');
 
 /* ------------------------------------------------------------ rendering building blocks */
 function layoutOf(extra = {}) {
@@ -117,7 +74,7 @@ const sparkline = (vals, color = 'var(--forest-2)') => {
   const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * 100},${28 - ((v - lo) / span) * 24}`).join(' ');
   return `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
 };
-const kpi = (label, value, small = '', spark = '') => `<div class="kpi"><span class="l">${label}</span><b>${value}</b><small>${small}</small>${spark}</div>`;
+const kpi = (label, value, small = '', spark = '', tg = '') => `<div class="kpi"><span class="l">${label}</span><b>${value}</b>${tg}<small>${small}</small>${spark}</div>`;
 const hbar = (list, color = PAL[0]) => ({
   type: 'bar', orientation: 'h', x: list.map((e) => e[1]), y: list.map((e) => e[0]), text: list.map((e) => fmt(e[1])), textposition: 'outside', cliponaxis: false,
   marker: { color }, hovertemplate: '%{y}<br>%{x:,.0f}<extra></extra>',
@@ -131,101 +88,78 @@ const yearSeries = (rows) => {
   return { yrs, prod: yrs.map((y) => P_.get(y)), area: yrs.map((y) => A.get(y) || 0) };
 };
 
-/* group a variable by a key, keeping the groups with the most records */
-function groupedStats(variable, key, limit = 12) {
-  const m = new Map();
-  for (const r of F) { const v = valueOf(r, variable); if (v == null || isNaN(v)) continue; (m.get(r[key]) || m.set(r[key], []).get(r[key])).push(v); }
-  return [...m.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, limit).map(([k, vals]) => ({ name: k, d: describe(vals) }));
-}
-
 /* ------------------------------------------------------------ pages */
 const P = {};
 
+/* The first and last crop years are sparsely reported, so growth and stability skip them when there are enough years. */
+const trimYears = (n) => (n >= 5 ? [1, n - 2] : [0, n - 1]);
+const cagrOf = (v, a0, a1) => (a1 > a0 && v[a0] > 0 ? Math.pow(v[a1] / v[a0], 1 / (a1 - a0)) - 1 : NaN);
+const cvOf = (v) => { if (v.length < 3) return NaN; const mu = sum(v) / v.length; return mu > 0 ? Math.sqrt(sum(v.map((x) => (x - mu) ** 2)) / (v.length - 1)) / mu : NaN; };
+const tag = (cls, text) => `<em class="tag ${cls}">${text}</em>`;
+
 P.overview = () => {
-  const total = sum(FP.map((r) => r.p)), area = sum(FP.map((r) => r.a || 0));
-  const ys = yearSeries(FP), n = ys.yrs.length;
-  const crops = entries(groupSum(FP, 'c', 'p')), states = entries(groupSum(FP, 's', 'p')), seasons = entries(groupSum(FP, 'se', 'p'));
-  const yields = FP.map(yieldOf).filter((v) => v != null).sort((a, b) => a - b);
-  const uniq = (k) => new Set(F.map((r) => r[k])).size;
-  const ok = FP.filter((r) => r.a != null);
-  const sp = ok.length > 3 ? spearman(ok.map((r) => r.a), ok.map((r) => r.p)) : NaN;
-  const iMax = ys.prod.indexOf(maxOf(ys.prod)), N = S.topN;
-  return head('Overview', 'A one-screen summary of what was grown, where, when and how much — for whatever the filters above select.') +
+  const total = sum(FP.map((r) => r.p)), ys = yearSeries(FP), n = ys.yrs.length, N = S.topN;
+  const crops = entries(groupSum(FP, 'c', 'p')), states = entries(groupSum(FP, 's', 'p'));
+  const [a0, a1] = trimYears(n), cagr = cagrOf(ys.prod, a0, a1), cv = cvOf(ys.prod.slice(a0, a1 + 1));
+  const topCrop = share(crops[0][1], total), top3 = share(sum(states.slice(0, 3).map((e) => e[1])), total);
+  let c80 = 0, acc = 0; for (const e of crops) { acc += e[1]; c80++; if (acc / total >= 0.8) break; }
+  const iMax = ys.prod.indexOf(maxOf(ys.prod));
+  const gT = isNaN(cagr) ? '' : cagr >= 0.02 ? tag('good', 'Growing') : cagr > -0.02 ? tag('warn', 'Flat') : tag('bad', 'Declining');
+  const cT = topCrop > .5 ? tag('bad', 'High dependence') : topCrop > .3 ? tag('warn', 'Moderate') : tag('good', 'Diversified');
+  const sT = top3 > .75 ? tag('bad', 'Highly concentrated') : top3 > .5 ? tag('warn', 'Concentrated') : tag('good', 'Spread out');
+  const kT = c80 <= 3 ? tag('bad', 'Very narrow') : c80 <= 10 ? tag('warn', 'Narrow') : tag('good', 'Broad');
+  const vT = isNaN(cv) ? '' : cv < .15 ? tag('good', 'Steady') : cv < .3 ? tag('warn', 'Variable') : tag('bad', 'Volatile');
+  return head('Scorecard', 'For agriculture planners: how much is produced, how fast it is changing, and how exposed supply is to one crop, a few states or a bad year.') +
     (!S.noCoco && FP.some((r) => r.c === 'Coconut') ? '<div class="alert"><b>Coconut is dominating the totals.</b> It is recorded in nuts, not tonnes, so it dwarfs every other crop. Switch on <b>Exclude coconut</b> in the filter bar for a fairer comparison.</div>' : '') +
-    takeaways([
-      `<b>${esc(crops[0][0])}</b> is the largest crop (${pct(share(crops[0][1], total))} of recorded production); the top 3 crops hold ${pct(share(sum(crops.slice(0, 3).map((e) => e[1])), total))}.`,
-      `<b>${esc(states[0][0])}</b> leads the states with ${pct(share(states[0][1], total))}; the top 3 states hold ${pct(share(sum(states.slice(0, 3).map((e) => e[1])), total))}.`,
-      `<b>${esc(seasons[0][0])}</b> is the biggest season (${pct(share(seasons[0][1], total))}).`,
-      n > 1 ? `Production peaked in <b>${ys.yrs[iMax]}</b> at ${fmt(ys.prod[iMax])}.` : '',
-      isNaN(sp) ? '' : `Area and production are <b>${strength(sp)}</b>ly related by rank (Spearman ρ = ${sp.toFixed(2)}).`,
-    ]) +
-    `<div class="kpis">${kpi('Total production', fmt(total), 'recorded volume', sparkline(ys.prod))}${kpi('Cultivated area', fmt(area) + ' ha', 'summed over records', sparkline(ys.area, 'var(--amber)'))}
-      ${kpi('Median yield', num(quantile(yields, .5)), 'production per hectare, typical record')}${kpi('Records', int(F.length), `${int(F.length - FP.length)} without production`)}
-      ${kpi('Coverage', `${uniq('s')} · ${uniq('d')} · ${uniq('c')}`, 'states · districts · crops')}${kpi('Period', `${minOf(FP.map((r) => r.y))}–${maxOf(FP.map((r) => r.y))}`, `${n} crop years`)}</div>` +
-    grid('wide',
-      card({ title: 'Production through time', sub: 'Sum of recorded production per crop year',
-        plot: { traces: [{ type: 'scatter', mode: 'lines+markers', x: ys.yrs, y: ys.prod, fill: 'tozeroy', fillcolor: 'rgba(47,125,79,.12)', line: { color: PAL[0], width: 2.5 }, hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }], layout: { yaxis: { title: 'Production' } } },
-        tbl: { headers: ['Year', 'Production', 'Area (ha)'], rows: ys.yrs.map((y, i) => [y, fmt(ys.prod[i]), fmt(ys.area[i])]) },
-        how: 'Each point adds up every crop-district-season record reported for that crop year, so the line is the total recorded production for your current selection. A rising line means more recorded output; the shaded area under it makes the overall scale easy to compare from year to year.',
-        insight: n > 1 ? `Output peaked in <b>${ys.yrs[iMax]}</b> at ${fmt(ys.prod[iMax])}, which is ${num(ys.prod[iMax] / (total / n), 1)}× the average year (${fmt(total / n)}). It moved from ${fmt(ys.prod[0])} in ${ys.yrs[0]} to ${fmt(ys.prod[n - 1])} in ${ys.yrs[n - 1]}, and the lowest year was ${ys.yrs[ys.prod.indexOf(minOf(ys.prod))]} at ${fmt(minOf(ys.prod))}.` : '',
-        caution: 'In this dataset the first and last crop years have far fewer records than the middle years, so the line drops sharply at both edges. That reflects incomplete reporting, not a real collapse in farming.' }),
-      card({ title: 'Season share', sub: 'Share of production by season',
-        plot: { traces: [{ type: 'pie', hole: .55, labels: seasons.map((e) => e[0]), values: seasons.map((e) => e[1]), marker: { colors: PAL }, textinfo: 'label+percent', sort: false }], layout: { margin: { t: 6, b: 6, l: 6, r: 6 }, showlegend: false } },
-        tbl: { headers: ['Season', 'Production', 'Share'], rows: rowsOf(seasons, total) },
-        how: 'Each slice is a season’s share of total production. Kharif is the monsoon-sown season, Rabi the winter-sown season, and “Whole Year” holds perennial crops such as coconut and sugarcane that are harvested through the year.',
-        insight: `<b>${esc(seasons[0][0])}</b> accounts for ${pct(share(seasons[0][1], total))}${seasons[1] ? `, followed by ${esc(seasons[1][0])} at ${pct(share(seasons[1][1], total))}` : ''}. ${seasons.filter((e) => share(e[1], total) < 0.01).length} of ${seasons.length} seasons each contribute under 1%.`,
-        caution: 'A very large “Whole Year” slice is usually driven by coconut. Switch on Exclude coconut in the filter bar to see how Kharif and Rabi, the true cropping seasons, compare.' })) +
+    `<div class="kpis">${kpi('Total production', fmt(total), `recorded volume, ${ys.yrs[0]}–${ys.yrs[n - 1]}`, sparkline(ys.prod))}` +
+    `${kpi('Annual growth', isNaN(cagr) ? '–' : (cagr >= 0 ? '+' : '') + pct(cagr), `compound, ${ys.yrs[a0]}–${ys.yrs[a1]}`, '', gT)}` +
+    `${kpi('Top-crop share', pct(topCrop), esc(crops[0][0]) + ' of all production', '', cT)}` +
+    `${kpi('Top-3 state share', pct(top3), esc(states.slice(0, 3).map((e) => e[0]).join(', ')), '', sT)}` +
+    `${kpi('Crops for 80% of output', int(c80), `out of ${int(crops.length)} crops`, '', kT)}` +
+    `${kpi('Output stability', isNaN(cv) ? '–' : cv.toFixed(2), 'variation of yearly totals (lower = steadier)', '', vT)}</div>` +
+    '<p class="legend">Ratings are rules of thumb. Dependence: top crop over 50% is high, 30–50% moderate. Concentration: top 3 states over 75% is high, 50–75% concentrated. Stability: variation under 0.15 is steady, 0.15–0.30 variable, above 0.30 volatile. Growth: within ±2% a year counts as flat.</p>' +
+    takeaways([`<b>Crop risk:</b> ${esc(crops[0][0])} supplies ${pct(topCrop)} of recorded production and ${c80} crop${c80 > 1 ? 's' : ''} cover 80%. ${topCrop > .5 ? 'A shock to this one crop would move the whole total, so it is the first thing to monitor.' : 'No single crop overwhelms the total.'}`,
+      `<b>Regional risk:</b> ${esc(states[0][0])} leads with ${pct(share(states[0][1], total))}; the top 3 states hold ${pct(top3)}. ${top3 > .75 ? 'Supply is geographically concentrated, so a regional drought or flood matters nationally.' : 'Supply is reasonably spread across states.'}`,
+      n > 1 ? `<b>Momentum:</b> production ${isNaN(cagr) ? 'changed' : cagr >= 0 ? 'grew' : 'shrank'} ${isNaN(cagr) ? '' : 'about ' + pct(Math.abs(cagr)) + ' a year '}between ${ys.yrs[a0]} and ${ys.yrs[a1]}, and peaked in ${ys.yrs[iMax]}.` : '',
+      isNaN(cv) ? '' : `<b>Reliability:</b> yearly output varies by ${cv.toFixed(2)} (${cv < .15 ? 'steady' : cv < .3 ? 'variable' : 'volatile'}), so plan buffers ${cv < .15 ? 'modestly' : 'generously'}.`]) +
+    grid('one', card({ title: 'Production through time', sub: 'Sum of recorded production per crop year', height: 320,
+      plot: { traces: [{ type: 'scatter', mode: 'lines+markers', x: ys.yrs, y: ys.prod, fill: 'tozeroy', fillcolor: 'rgba(47,125,79,.12)', line: { color: PAL[0], width: 2.5 }, hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }], layout: { yaxis: { title: 'Production' } } },
+      tbl: { headers: ['Year', 'Production', 'Area (ha)'], rows: ys.yrs.map((y, i) => [y, fmt(ys.prod[i]), fmt(ys.area[i])]) },
+      how: 'Each point adds up every record reported for that crop year. A rising line means more recorded output.',
+      insight: n > 1 ? `Output peaked in <b>${ys.yrs[iMax]}</b> at ${fmt(ys.prod[iMax])}, ${num(ys.prod[iMax] / (total / n), 1)}× the average year (${fmt(total / n)}).` : '',
+      caution: 'The first and last crop years have far fewer records, so the line drops at both edges. That is incomplete reporting, not a real collapse.' })) +
     grid('', card({ title: `Top ${N} crops`, sub: 'By total recorded production', height: hh(N),
         plot: { traces: [hbar(crops.slice(0, N), PAL[0])], layout: hbarLayout() }, tbl: { headers: ['Crop', 'Production', 'Share'], rows: rowsOf(crops.slice(0, N), total) },
-        how: 'Each bar is one crop’s total recorded production across the selected years, states and seasons; the label at the end of the bar is the exact total. Longer bars mean more recorded volume.',
-        insight: `<b>${esc(crops[0][0])}</b> holds ${pct(share(crops[0][1], total))}${crops[1] ? `, which is ${num(share(crops[0][1], crops[1][1]), 1)}× the next crop (${esc(crops[1][0])})` : ''}. The top ${N} crops together hold ${pct(share(sum(crops.slice(0, N).map((e) => e[1])), total))}, leaving ${Math.max(0, crops.length - N)} other crops to share the remaining ${pct(1 - share(sum(crops.slice(0, N).map((e) => e[1])), total))}.`,
-        caution: 'Crops are recorded in different units (coconut in nuts, most others in tonnes), so this compares recorded volume, not weight or economic value.' }),
+        how: 'Each bar is one crop’s total recorded production. Longer means more volume.',
+        insight: `<b>${esc(crops[0][0])}</b> holds ${pct(topCrop)}${crops[1] ? `, ${num(share(crops[0][1], crops[1][1]), 1)}× the next crop (${esc(crops[1][0])})` : ''}.`,
+        caution: 'Crops are recorded in different units (coconut in nuts, most others in tonnes), so this compares recorded volume, not weight or value.' }),
       card({ title: `Top ${N} states`, sub: 'By total recorded production', height: hh(N),
         plot: { traces: [hbar(states.slice(0, N), PAL[1])], layout: hbarLayout() }, tbl: { headers: ['State', 'Production', 'Share'], rows: rowsOf(states.slice(0, N), total) },
-        how: 'Each bar is a state’s total recorded production. A state ranks high either because it grows a lot or because it grows a high-volume crop.',
-        insight: `<b>${esc(states[0][0])}</b> contributes ${pct(share(states[0][1], total))}${states[1] ? `, ahead of ${esc(states[1][0])} (${pct(share(states[1][1], total))})` : ''}. The top 3 states hold ${pct(share(sum(states.slice(0, 3).map((e) => e[1])), total))}; at rank ${Math.min(N, states.length)}, ${esc(states[Math.min(N, states.length) - 1][0])} contributes only ${pct(share(states[Math.min(N, states.length) - 1][1], total), 2)}.`,
-        caution: 'Rank mirrors crop mix: a state growing coconut or sugarcane outranks states growing cereals even with less land. Use the Crops page to separate crop effects from land effects.' }));
+        how: 'Each bar is a state’s total recorded production.',
+        insight: `<b>${esc(states[0][0])}</b> contributes ${pct(share(states[0][1], total))}${states[1] ? `, ahead of ${esc(states[1][0])} (${pct(share(states[1][1], total))})` : ''}.`,
+        caution: 'A state ranks high either because it grows a lot or because it grows a high-volume crop such as coconut.' }));
 };
 
 P.trends = () => {
-  const ys = yearSeries(FP), n = ys.yrs.length, N = Math.min(S.topN, 10);
+  const ys = yearSeries(FP), n = ys.yrs.length;
   const yld = ys.prod.map((p, i) => (ys.area[i] > 0 ? p / ys.area[i] : null));
   const yoy = ys.prod.map((v, i) => (i && ys.prod[i - 1] > 0 ? (v / ys.prod[i - 1] - 1) * 100 : null));
-  const a0 = n >= 5 ? 1 : 0, a1 = n >= 5 ? n - 2 : n - 1;   /* skip the sparse first/last years when there are enough */
-  const cagr = a1 > a0 && ys.prod[a0] > 0 ? Math.pow(ys.prod[a1] / ys.prod[a0], 1 / (a1 - a0)) - 1 : NaN;
-  const swing = yoy.map((v, i) => [ys.yrs[i], v]).filter((e) => e[1] != null).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
-  const top = entries(groupSum(FP, 'c', 'p')).slice(0, N).map((e) => e[0]);
-  const cy = new Map(); for (const r of FP) if (top.includes(r.c)) { const k = r.c + '|' + r.y; cy.set(k, (cy.get(k) || 0) + r.p); }
-  const idx = top.map((c, i) => {
-    const series = ys.yrs.map((y) => cy.get(c + '|' + y) || 0), base = series.find((v) => v > 0) || 1;
-    return { type: 'scatter', mode: 'lines', name: c, x: ys.yrs, y: series.map((v) => (v / base) * 100), line: { color: PAL[i % 10], width: 2 } };
-  });
-  return head('Trends', 'How recorded production, area and yield moved from year to year.') +
+  const [a0, a1] = trimYears(n), cagr = cagrOf(ys.prod, a0, a1);
+  return head('Trends', 'Is output rising, and is it coming from more land or from better yield?') +
     takeaways([n > 1 ? `Compound annual growth in production from ${ys.yrs[a0]} to ${ys.yrs[a1]} was about <b>${isNaN(cagr) ? '–' : pct(cagr)}</b> per year${n >= 5 ? ' (the sparsely reported first and last years are skipped)' : ''}.` : '',
-      swing ? `The largest single-year swing was <b>${swing[0]}</b> (${swing[1] > 0 ? '+' : ''}${swing[1].toFixed(1)}%)${swing[0] === ys.yrs[n - 1] || swing[0] === ys.yrs[0] ? ' — an edge effect from sparse reporting in the first/last year, not a real collapse' : ''}.` : '',
       a1 > a0 ? `Between ${ys.yrs[a0]} and ${ys.yrs[a1]} yield moved from ${num(yld[a0])} to ${num(yld[a1])} production per hectare; area went from ${fmt(ys.area[a0])} to ${fmt(ys.area[a1])} ha.` : '']) +
     grid('one', card({ title: 'Total production by year', height: 340,
       plot: { traces: [{ type: 'scatter', mode: 'lines+markers', x: ys.yrs, y: ys.prod, line: { color: PAL[0], width: 2.5 } }], layout: { yaxis: { title: 'Production' } } },
       tbl: { headers: ['Year', 'Production', 'YoY %'], rows: ys.yrs.map((y, i) => [y, fmt(ys.prod[i]), yoy[i] == null ? '–' : yoy[i].toFixed(1) + '%']) },
-      how: 'Each point is the total production recorded in that crop year. Read the overall direction first (up, flat or down), then look for individual years that break the pattern. Use the Table view for exact figures and year-over-year percentages.',
-      insight: n > 1 ? `Of ${n - 1} year-to-year changes, ${yoy.filter((v) => v > 0).length} were increases and ${yoy.filter((v) => v != null && v < 0).length} were decreases. ${isNaN(cagr) ? '' : `Output ${cagr >= 0 ? 'grew' : 'shrank'} at a compound ${pct(Math.abs(cagr))} per year from ${ys.yrs[a0]} to ${ys.yrs[a1]}. `}The best year (${ys.yrs[ys.prod.indexOf(maxOf(ys.prod))]}, ${fmt(maxOf(ys.prod))}) was ${num(maxOf(ys.prod) / Math.max(minOf(ys.prod), 1), 1)}× the weakest (${ys.yrs[ys.prod.indexOf(minOf(ys.prod))]}, ${fmt(minOf(ys.prod))}).` : '',
+      how: 'Each point is the total production recorded in that crop year. Read the overall direction first, then look for years that break the pattern. The Table view adds year-over-year percentages.',
+      insight: n > 1 ? `Of ${n - 1} year-to-year changes, ${yoy.filter((v) => v > 0).length} were increases and ${yoy.filter((v) => v != null && v < 0).length} were decreases. ${isNaN(cagr) ? '' : `Output ${cagr >= 0 ? 'grew' : 'shrank'} at a compound ${pct(Math.abs(cagr))} per year from ${ys.yrs[a0]} to ${ys.yrs[a1]}. `}The best year (${ys.yrs[ys.prod.indexOf(maxOf(ys.prod))]}) was ${num(maxOf(ys.prod) / Math.max(minOf(ys.prod), 1), 1)}× the weakest (${ys.yrs[ys.prod.indexOf(minOf(ys.prod))]}).` : '',
       caution: 'Reporting coverage is uneven: the first and last years have few records, which exaggerates growth at the start and decline at the end. Judge the trend from the middle years.' })) +
-    grid('', card({ title: 'Year-over-year change', sub: 'Percent change vs previous year',
-        plot: { traces: [{ type: 'bar', x: ys.yrs, y: yoy, marker: { color: yoy.map((v) => (v >= 0 ? PAL[0] : PAL[3])) }, hovertemplate: '%{x}: %{y:.1f}%<extra></extra>' }], layout: { yaxis: { title: '%' } } },
-        how: 'Each bar compares a year’s total with the year before it. Green means production rose, rust means it fell, and the taller the bar the larger the change.',
-        insight: swing ? `${yoy.filter((v) => v > 0).length} growth years against ${yoy.filter((v) => v != null && v < 0).length} declines, averaging ${num(sum(yoy.filter((v) => v != null)) / Math.max(1, yoy.filter((v) => v != null).length), 1)}% a year. The largest move was <b>${swing[0]}</b> at ${swing[1] > 0 ? '+' : ''}${swing[1].toFixed(1)}%${swing[0] === ys.yrs[n - 1] || swing[0] === ys.yrs[0] ? ', which comes from sparse reporting in that edge year' : ''}.` : '',
-        caution: 'A percentage change on a total inherits every reporting gap, so a big jump in one year can mean more districts were reported rather than more food was grown.' }),
-      card({ title: 'Yield and area', sub: 'Production per hectare (left) and cultivated area (right)',
-        plot: { traces: [{ type: 'scatter', mode: 'lines+markers', name: 'Yield', x: ys.yrs, y: yld, line: { color: PAL[1] } }, { type: 'scatter', mode: 'lines', name: 'Area (ha)', x: ys.yrs, y: ys.area, yaxis: 'y2', line: { color: PAL[2], dash: 'dot' } }],
-          layout: { yaxis: { title: 'Yield' }, yaxis2: { overlaying: 'y', side: 'right', title: 'Area (ha)', showgrid: false } } },
-        how: 'The solid line is yield (production per hectare, left axis) and the dotted line is total cultivated area (right axis). If production rises faster than area, the gain comes from higher yield rather than from planting more land.',
+    grid('one', card({ title: 'Yield and area', sub: 'Production per hectare (left) and cultivated area (right)', height: 340,
+      plot: { traces: [{ type: 'scatter', mode: 'lines+markers', name: 'Yield', x: ys.yrs, y: yld, line: { color: PAL[1] } }, { type: 'scatter', mode: 'lines', name: 'Area (ha)', x: ys.yrs, y: ys.area, yaxis: 'y2', line: { color: PAL[2], dash: 'dot' } }],
+        layout: { yaxis: { title: 'Yield' }, yaxis2: { overlaying: 'y', side: 'right', title: 'Area (ha)', showgrid: false } } },
+      how: 'The solid line is yield (production per hectare, left axis) and the dotted line is total cultivated area (right axis). If production rises faster than area, the gain comes from higher yield rather than from planting more land.',
       insight: a1 > a0 && ys.area[a0] > 0 && ys.prod[a0] > 0 ? `From ${ys.yrs[a0]} to ${ys.yrs[a1]} recorded area changed by ${num((ys.area[a1] / ys.area[a0] - 1) * 100, 0)}% while production changed by ${num((ys.prod[a1] / ys.prod[a0] - 1) * 100, 0)}%. ${ys.prod[a1] / ys.prod[a0] > ys.area[a1] / ys.area[a0] ? 'Production grew faster than area, pointing to yield gains.' : 'Area grew at least as fast as production, so yields did not improve much.'}` : '',
-      caution: 'Yield here is total production divided by total area across crops measured in different units, so treat it as a broad indicator. For a like-for-like view, filter to a single crop.' })) +
-    grid('one', card({ title: `Growth of the top ${N} crops (first year = 100)`, sub: S.topN > 10 ? 'Capped at 10 lines to stay readable' : '', height: 360,
-      plot: { traces: idx, layout: { yaxis: { title: 'Index', type: 'log' } } },
-      how: 'Each line is a crop’s yearly production divided by its first year in the selection, so crops of any size can be compared on growth alone (log scale).',
-      insight: idx.length ? (() => { const g = idx.map((t) => [t.name, t.y[t.y.length - 1]]).sort((a, b) => b[1] - a[1]); return `Lines above 100 grew over the period. The fastest riser is <b>${esc(g[0][0])}</b> (index ${num(g[0][1], 0)}, meaning ${num(g[0][1] / 100, 1)}× its starting output); the weakest is <b>${esc(g[g.length - 1][0])}</b> (index ${num(g[g.length - 1][1], 0)}).`; })() : '',
-      caution: 'The index starts from each crop’s first year in the selection; a crop that began with very small recorded output can show a dramatic index without being large in absolute terms.' }));
+      caution: 'Yield here is total production divided by total area across crops measured in different units, so treat it as a broad indicator. For a like-for-like view, filter to a single crop.' }));
 };
 
 P.crops = () => {
@@ -233,13 +167,8 @@ P.crops = () => {
   let cum = 0; const cumPct = top.map((e) => ((cum += e[1]) / total) * 100);
   const A = groupSum(FP.filter((r) => r.a > 0), 'c', 'a'), PP = groupSum(FP.filter((r) => r.a > 0), 'c', 'p');
   const yl = [...A.keys()].map((c) => [c, PP.get(c) / A.get(c)]).sort((a, b) => b[1] - a[1]).slice(0, N);
-  if (!S.cropFocus || !cp.some((e) => e[0] === S.cropFocus)) S.cropFocus = cp[0][0];
-  const cf = FP.filter((r) => r.c === S.cropFocus), cys = yearSeries(cf), cTotal = sum(cf.map((r) => r.p));
-  const cst = entries(groupSum(cf, 's', 'p')).slice(0, 8), cse = entries(groupSum(cf, 'se', 'p'));
-  const t30 = cp.slice(0, 30);
-  const tm = top.concat(cp.length > N ? [['All other crops', total - sum(top.map((e) => e[1]))]] : []);
   let c80 = 0, acc80 = 0; for (const e of cp) { acc80 += e[1]; c80++; if (acc80 / total >= 0.8) break; }
-  return head('Crops', 'Which crops carry the volume, which use land most productively, and a profile for any single crop.') +
+  return head('Crops', 'Which crops carry the supply, and how dependent is it on a few of them?') +
     takeaways([`Top crop <b>${esc(top[0][0])}</b> holds ${pct(share(top[0][1], total))}; the top ${N} hold <b>${cumPct[cumPct.length - 1].toFixed(1)}%</b> of production.`,
       yl.length ? `Highest yield: <b>${esc(yl[0][0])}</b> at ${num(yl[0][1])} per hectare — rankings by yield and by volume differ.` : '']) +
     grid('', card({ title: `Top ${N} crops by production`, height: hh(N), plot: { traces: [hbar(top, PAL[0])], layout: hbarLayout() }, tbl: { headers: ['Crop', 'Production', 'Share'], rows: rowsOf(top, total) },
@@ -250,222 +179,154 @@ P.crops = () => {
         how: 'Crops are added one at a time from largest to smallest, and the line shows the running percentage of total production. A line that shoots up and flattens means a few crops dominate; a gentle slope means output is spread evenly.',
         insight: `The #1 crop alone gives ${cumPct[0].toFixed(0)}%, the top ${Math.min(3, cumPct.length)} give ${cumPct[Math.min(3, cumPct.length) - 1].toFixed(0)}% and the top ${cumPct.length} give ${cumPct[cumPct.length - 1].toFixed(0)}%. The curve ${cumPct[0] > 50 ? 'is extremely steep: one crop is more than half of everything.' : 'rises steadily: no single crop overwhelms the rest.'}`,
         caution: 'The Pareto view hides the many small crops beyond the top N; they are still part of the remaining share.' })) +
-    grid('', card({ title: `Crop share map (top ${N} + others)`, plot: { traces: [{ type: 'treemap', labels: tm.map((e) => e[0]), parents: tm.map(() => ''), values: tm.map((e) => e[1]), textinfo: 'label+percent root', marker: { colors: PAL.concat(PAL, PAL) } }], layout: { margin: { t: 4, l: 4, r: 4, b: 4 } } },
-        how: 'Each rectangle is a crop and its area is proportional to that crop’s share of production, so the biggest blocks are the biggest crops. Hover for exact values.',
-        insight: `The ${N} crops shown cover ${pct(share(sum(top.map((e) => e[1])), total))} of production; the other ${Math.max(0, cp.length - N)} crops together make up ${pct(1 - share(sum(top.map((e) => e[1])), total), 2)}.`,
-        caution: 'When one crop dwarfs the rest, the smaller blocks become hard to see. Exclude coconut or filter to a state to zoom in.' }),
-      card({ title: `Top ${N} crops by yield`, sub: 'Production per hectare', height: 330, plot: { traces: [hbar(yl, PAL[1])], layout: hbarLayout() }, tbl: { headers: ['Crop', 'Yield'], rows: yl.map((e) => [esc(e[0]), num(e[1])]) },
+    grid('', card({ title: `Top ${N} crops by yield`, sub: 'Production per hectare', height: 330, plot: { traces: [hbar(yl, PAL[1])], layout: hbarLayout() }, tbl: { headers: ['Crop', 'Yield'], rows: yl.map((e) => [esc(e[0]), num(e[1])]) },
         how: 'Yield is a crop’s total production divided by its total cultivated area, i.e. output per hectare. It measures how productive each hectare is, regardless of how much land the crop occupies.',
       insight: yl.length > 2 ? `The highest yields belong to <b>${esc(yl[0][0])}</b> (${num(yl[0][1])}), <b>${esc(yl[1][0])}</b> (${num(yl[1][1])}) and <b>${esc(yl[2][0])}</b> (${num(yl[2][1])}). Compare with the volume ranking: high yield and high volume are different things, because small-area crops can be very productive per hectare.` : '',
-      caution: 'Units differ by crop (for example coconut counts nuts), so yield is only comparable between crops measured in the same unit.' })) +
-    `<div class="section-title">Crop profile</div><div class="ctrls"><label>Crop <select id="cropFocus">${cp.map((e) => `<option ${e[0] === S.cropFocus ? 'selected' : ''}>${esc(e[0])}</option>`).join('')}</select></label>
-      <span>${esc(S.cropFocus)}: ${fmt(cTotal)} produced, ${pct(share(cTotal, total))} of selection, ${int(cf.length)} records.</span></div>` +
-    grid('', card({ title: `${esc(S.cropFocus)} over time`, plot: { traces: [{ type: 'scatter', mode: 'lines+markers', x: cys.yrs, y: cys.prod, line: { color: PAL[2], width: 2.5 } }], layout: { yaxis: { title: 'Production' } } }, tbl: { headers: ['Year', 'Production'], rows: cys.yrs.map((y, i) => [y, fmt(cys.prod[i])]) },
-        how: 'The same year-by-year total as the main trend, but for the single crop chosen above. Change the crop in the selector to profile another.',
-        insight: cys.yrs.length > 1 ? `${esc(S.cropFocus)} peaked in <b>${cys.yrs[cys.prod.indexOf(maxOf(cys.prod))]}</b> at ${fmt(maxOf(cys.prod))} and was ${fmt(cys.prod[cys.prod.length - 1])} in ${cys.yrs[cys.yrs.length - 1]}, versus ${fmt(cys.prod[0])} in ${cys.yrs[0]}.` : '',
-        caution: 'A crop reported in only a few years will look volatile; check the record count above before drawing conclusions.' }),
-      card({ title: `Where ${esc(S.cropFocus)} is grown`, height: hh(cst.length), plot: { traces: [hbar(cst, PAL[2])], layout: hbarLayout() }, tbl: { headers: ['State', 'Production', 'Share'], rows: rowsOf(cst, cTotal) },
-        how: 'The states that grow the most of the selected crop, ranked by total production. The table adds each state’s share.',
-        insight: cst.length ? `<b>${esc(cst[0][0])}</b> produces ${pct(share(cst[0][1], cTotal))} of this crop${cst[1] ? `, followed by ${esc(cst[1][0])} (${pct(share(cst[1][1], cTotal))})` : ''}. The top ${Math.min(3, cst.length)} states account for ${pct(share(sum(cst.slice(0, 3).map((e) => e[1])), cTotal))}. It is grown in ${cse.length} season${cse.length > 1 ? 's' : ''}: ${cse.map((e) => esc(e[0])).join(', ')}.` : '',
-        caution: 'This shows where the crop is recorded, which depends on both farming and reporting.' }));
+      caution: 'Units differ by crop (for example coconut counts nuts), so yield is only comparable between crops measured in the same unit.' }));
 };
 
 P.regions = () => {
-  const sp = entries(groupSum(FP, 's', 'p')), total = sum(sp.map((e) => e[1])), N = S.topN, top = sp.slice(0, N), names = top.map((e) => e[0]);
-  const yrs = [...new Set(FP.map((r) => r.y))].sort((a, b) => a - b), cell = new Map();
-  for (const r of FP) if (names.includes(r.s)) { const k = r.s + '|' + r.y; cell.set(k, (cell.get(k) || 0) + r.p); }
-  const z = names.map((s) => yrs.map((y) => { const v = cell.get(s + '|' + y); return v > 0 ? Math.log10(v) : null; }));
-  const dm = new Map(); for (const r of FP) { const k = r.d + '||' + r.s; dm.set(k, (dm.get(k) || 0) + r.p); }
-  const dt = entries(dm).slice(0, N).map(([k, v]) => { const [d, s] = k.split('||'); return [`${d} (${s})`, v]; });
+  const sp = entries(groupSum(FP, 's', 'p')), total = sum(sp.map((e) => e[1])), N = S.topN, top = sp.slice(0, N);
   const sy = new Map(); for (const r of FP) { if (!sy.has(r.s)) sy.set(r.s, new Map()); const m = sy.get(r.s); m.set(r.y, (m.get(r.y) || 0) + r.p); }
-  const cv = [...sy.entries()].map(([s, m]) => { const v = [...m.values()]; if (v.length < 3) return null; const mu = sum(v) / v.length; if (mu <= 0) return null;
-    return [s, Math.sqrt(sum(v.map((x) => (x - mu) ** 2)) / (v.length - 1)) / mu]; }).filter(Boolean).sort((a, b) => a[1] - b[1]);
+  const cv = [...sy.entries()].map(([s, m]) => { const v = [...m.keys()].sort((a, b) => a - b).map((y) => m.get(y)); return [s, cvOf(v)]; }).filter((e) => !isNaN(e[1])).sort((a, b) => a[1] - b[1]);
   const A = groupSum(FP, 's', 'a'), nrec = new Map(); for (const r of FP) nrec.set(r.s, (nrec.get(r.s) || 0) + 1);
-  return head('Regions', 'Where production comes from — by state and district — and how steady each state’s output is.') +
-    takeaways([`<b>${esc(sp[0][0])}</b> leads with ${pct(share(sp[0][1], total))}; the top 3 states hold ${pct(share(sum(sp.slice(0, 3).map((e) => e[1])), total))}.`,
-      dt.length ? `Biggest district: <b>${esc(dt[0][0])}</b>.` : '', cv.length > 1 ? `Steadiest state year to year: <b>${esc(cv[0][0])}</b> (CV ${cv[0][1].toFixed(2)}); most volatile: <b>${esc(cv[cv.length - 1][0])}</b> (CV ${cv[cv.length - 1][1].toFixed(2)}).` : '']) +
+  let k80 = 0, a80 = 0; for (const e of sp) { a80 += e[1]; k80++; if (a80 / total >= 0.8) break; }
+  return head('Regions', 'Which states carry the supply, and which of them can be relied on year after year?') +
+    takeaways([`<b>${esc(sp[0][0])}</b> leads with ${pct(share(sp[0][1], total))}; the top 3 states hold ${pct(share(sum(sp.slice(0, 3).map((e) => e[1])), total))}. ${k80} of ${sp.length} states supply 80% of production.`,
+      cv.length > 1 ? `Steadiest state year to year: <b>${esc(cv[0][0])}</b> (variation ${cv[0][1].toFixed(2)}); most volatile: <b>${esc(cv[cv.length - 1][0])}</b> (${cv[cv.length - 1][1].toFixed(2)}).` : '']) +
     grid('', card({ title: `Top ${N} states`, height: hh(N), plot: { traces: [hbar(top, PAL[0])], layout: hbarLayout() },
         tbl: { headers: ['State', 'Production', 'Share', 'Area (ha)', 'Yield', 'Records'], rows: top.map(([s, v]) => [esc(s), fmt(v), pct(share(v, total)), fmt(A.get(s) || 0), num(share(v, A.get(s) || 0)), int(nrec.get(s))]) },
         how: 'States ranked by total production. The Table view adds each state’s share, cultivated area, yield and number of records, so you can tell whether a high rank comes from land, productivity or simply more reporting.',
-        insight: `<b>${esc(sp[0][0])}</b> leads with ${pct(share(sp[0][1], total))}. ${(() => { let a = 0, k = 0; for (const e of sp) { a += e[1]; k++; if (a / total >= 0.8) break; } return `${k} of ${sp.length} states supply 80% of production.`; })()}`,
+        insight: `<b>${esc(sp[0][0])}</b> leads with ${pct(share(sp[0][1], total))}, and ${k80} of ${sp.length} states supply 80% of production.`,
         caution: 'State totals combine very different crops; a state’s lead often reflects a single high-volume crop.' }),
-      card({ title: `Top ${N} districts`, height: hh(N), plot: { traces: [hbar(dt, PAL[2])], layout: hbarLayout() },
-        how: 'The districts with the highest total production, labelled with their state. Use the State filter to drill into one state’s districts.',
-      insight: dt.length ? `<b>${esc(dt[0][0])}</b> is the top district with ${pct(share(dt[0][1], total))} of all recorded production. ${(() => { const c = new Map(); dt.forEach((e) => { const st = e[0].slice(e[0].lastIndexOf('(') + 1, -1); c.set(st, (c.get(st) || 0) + 1); }); const t = [...c.entries()].sort((a, b) => b[1] - a[1])[0]; return `${t[1]} of the top ${dt.length} districts are in ${esc(t[0])}.`; })()}` : '',
-      caution: 'There are hundreds of districts, so even the leaders hold a small share unless one crop dominates a district.' })) +
-    grid('one', card({ title: 'State × year production', sub: 'Colour = log10 of production', height: hh(N) + 40, plot: { traces: [{ type: 'heatmap', x: yrs, y: names, z, colorscale: [[0, '#f3f1df'], [.5, '#8fc19b'], [1, '#1f4d36']], colorbar: { title: 'log10' }, hovertemplate: '%{y}, %{x}<br>log10: %{z:.2f}<extra></extra>' }], layout: { yaxis: { autorange: 'reversed' }, margin: { l: 130, r: 10, t: 10, b: 40 } } },
-      how: 'Darker cells = higher production (a log scale lets small states show). Blank = no recorded production that year.', insight: (() => { const cells = z.length * (z[0] ? z[0].length : 0), blank = z.reduce((c, r) => c + r.filter((v) => v == null).length, 0); return `${blank} of ${cells} state-year cells are blank. Darker rows are consistently large producers; rows that fade in or out mark states whose records start late or stop early.`; })(),
-      caution: 'Blank cells usually reflect missing records, not an absence of farming, so avoid reading them as zero activity.' })) +
-    (cv.length ? grid('one', card({ title: `Output stability — ${Math.min(N, cv.length)} steadiest states`, sub: 'Coefficient of variation of yearly production (lower = steadier)', height: 300,
-      plot: { traces: [{ type: 'bar', x: cv.slice(0, N).map((e) => e[0]), y: cv.slice(0, N).map((e) => e[1]), marker: { color: PAL[5] } }], layout: { yaxis: { title: 'CV' }, xaxis: { tickangle: -35 } } },
-      tbl: { headers: ['State', 'CV'], rows: cv.map((e) => [esc(e[0]), e[1].toFixed(2)]) }, how: 'CV = standard deviation ÷ mean of the yearly totals.', insight: `Below about 0.3 a state is steady, above 1 it swings wildly. ${cv.filter((e) => e[1] > 1).length} of ${cv.length} states exceed 1, and ${cv.filter((e) => e[1] < 0.3).length} are below 0.3. The steadiest is <b>${esc(cv[0][0])}</b> (${cv[0][1].toFixed(2)}).`,
-      caution: 'High CV often comes from reporting gaps in some years rather than genuinely unstable harvests.' })) : '');
+      card({ title: `Output stability: ${Math.min(N, cv.length)} steadiest states`, sub: 'Variation of yearly production (lower = steadier)', height: hh(Math.min(N, cv.length)),
+        plot: { traces: [hbar(cv.slice(0, N).map((e) => [e[0], e[1]]), PAL[5])], layout: hbarLayout({ xaxis: { title: 'Variation' } }) },
+        tbl: { headers: ['State', 'Variation'], rows: cv.map((e) => [esc(e[0]), e[1].toFixed(2)]) },
+        how: 'Variation (coefficient of variation) is the standard deviation of a state’s yearly totals divided by their mean. A shorter bar means a more dependable state.',
+        insight: cv.length ? `Below about 0.3 a state is steady, above 1 it swings wildly. ${cv.filter((e) => e[1] > 1).length} of ${cv.length} states exceed 1, and ${cv.filter((e) => e[1] < 0.3).length} are below 0.3. The steadiest is <b>${esc(cv[0][0])}</b> (${cv[0][1].toFixed(2)}).` : 'Select at least three years to compute stability.',
+        caution: 'High variation often comes from reporting gaps in some years rather than genuinely unstable harvests.' }));
 };
 
 P.seasons = () => {
   const se = entries(groupSum(FP, 'se', 'p')), total = sum(se.map((e) => e[1])), names = se.map((e) => e[0]);
-  const yrs = [...new Set(FP.map((r) => r.y))].sort((a, b) => a - b), sy = new Map();
-  for (const r of FP) { const k = r.se + '|' + r.y; sy.set(k, (sy.get(k) || 0) + r.p); }
-  const topS = entries(groupSum(FP, 's', 'p')).slice(0, S.topN).map((e) => e[0]), ss = new Map();
-  for (const r of FP) if (topS.includes(r.s)) { const k = r.se + '|' + r.s; ss.set(k, (ss.get(k) || 0) + r.p); }
   const topC = entries(groupSum(FP, 'c', 'p')).slice(0, S.topN).map((e) => e[0]), sc = new Map(), seT = groupSum(FP, 'se', 'p');
   for (const r of FP) if (topC.includes(r.c)) { const k = r.se + '|' + r.c; sc.set(k, (sc.get(k) || 0) + r.p); }
   const zc = names.map((s) => topC.map((c) => share(sc.get(s + '|' + c) || 0, seT.get(s)) * 100));
-  return head('Seasons', 'Kharif, Rabi, Summer, Autumn, Winter and Whole-Year production compared.') +
+  return head('Seasons', 'When is the supply harvested, and which crops fill each season?') +
     takeaways([`<b>${esc(se[0][0])}</b> is the biggest season (${pct(share(se[0][1], total))}).`, se.length > 1 ? `Smallest: <b>${esc(se[se.length - 1][0])}</b> (${pct(share(se[se.length - 1][1], total), 2)}).` : '',
-      'A big “Whole Year” slice almost always means perennial crops — coconut and sugarcane — not a year-round harvest.']) +
+      'A big “Whole Year” slice almost always means perennial crops (coconut and sugarcane), not a year-round harvest.']) +
     grid('', card({ title: 'Production by season', plot: { traces: [{ type: 'bar', x: names, y: se.map((e) => e[1]), marker: { color: PAL }, hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }], layout: { yaxis: { title: 'Production' } } }, tbl: { headers: ['Season', 'Production', 'Share'], rows: rowsOf(se, total) },
         how: 'Each bar is one season’s total production for the selection; the Table view gives exact shares.',
         insight: `<b>${esc(se[0][0])}</b> is ${pct(share(se[0][1], total))} of the total${se[1] ? ` and ${num(share(se[0][1], se[1][1]), 1)}× the next season (${esc(se[1][0])})` : ''}.`,
         caution: 'Seasons differ in how many crops are grown and recorded, so a small season is not necessarily an unimportant one.' }),
-      card({ title: 'Season mix over time', plot: { traces: names.map((s, i) => ({ type: 'scatter', mode: 'lines', stackgroup: 'one', name: s, x: yrs, y: yrs.map((y) => sy.get(s + '|' + y) || 0), line: { color: PAL[i % 10] } })), layout: { yaxis: { title: 'Production' } } },
-        how: 'Stacked areas: each band is one season’s yearly production.', insight: yrs.length > 1 ? (() => { const f = yrs[0], l = yrs[yrs.length - 1], tot = (y) => sum(names.map((s) => sy.get(s + '|' + y) || 0)); return `${esc(names[0])} made up ${pct(share(sy.get(names[0] + '|' + f) || 0, tot(f)))} of output in ${f} and ${pct(share(sy.get(names[0] + '|' + l) || 0, tot(l)))} in ${l}. Bands that appear or vanish mark years where a season was not reported.`; })() : '',
-      caution: 'Total height is the yearly total, so edges are low for the same reporting reasons as elsewhere.' })) +
-    grid('', card({ title: `Season mix of the top ${S.topN} states`, plot: { traces: names.map((s, i) => ({ type: 'bar', name: s, x: topS, y: topS.map((st) => ss.get(s + '|' + st) || 0), marker: { color: PAL[i % 10] } })), layout: { barmode: 'stack', yaxis: { title: 'Production' }, xaxis: { tickangle: -35 } } },
-        how: 'Each bar is a state, stacked by the seasons that make up its production. A bar of one colour means the state depends on a single season.',
-        insight: topS.length ? (() => { const dom = names.map((s) => [s, ss.get(s + '|' + topS[0]) || 0]).sort((a, b) => b[1] - a[1])[0]; const t = sum(names.map((s) => ss.get(s + '|' + topS[0]) || 0)); return `The largest state, <b>${esc(topS[0])}</b>, draws ${pct(share(dom[1], t))} of its output from ${esc(dom[0])}.`; })() : '',
-        caution: 'Bars are in absolute volume, so small states look tiny regardless of their mix.' }),
       card({ title: 'Which crops fill each season', sub: `Share of the season’s production, top ${S.topN} crops (%)`, plot: { traces: [{ type: 'heatmap', x: topC, y: names, z: zc, colorscale: [[0, '#f3f1df'], [1, '#2f7d4f']], text: zc.map((r) => r.map((v) => v.toFixed(0))), texttemplate: '%{text}', colorbar: { title: '%' } }], layout: { yaxis: { autorange: 'reversed' }, xaxis: { tickangle: -35 }, margin: { l: 90, b: 90, t: 10, r: 10 } } },
         how: 'Each row shows what percent of that season’s production each crop supplies (other crops make up the rest).', insight: names.slice(0, 3).map((s, i) => { const row = zc[i], m = Math.max(...row); return `In ${esc(s)}, ${esc(topC[row.indexOf(m)])} supplies ${m.toFixed(0)}% of production`; }).join('; ') + '.',
-      caution: `Percentages cover only the top ${S.topN} crops, so a row can sum to less than 100%.` }));
+        caution: `Percentages cover only the top ${S.topN} crops, so a row can sum to less than 100%.` }));
 };
 
-/* shared control bar for the statistics pages */
-const statCtrls = () => `<div class="ctrls"><label>Measure <select id="variable">${Object.entries(VARS).map(([k, v]) => `<option value="${k}" ${k === S.variable ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-  <label>Compare by <select id="group">${Object.entries(GROUPS).map(([k, v]) => `<option value="${k}" ${k === S.group ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-  <label><input type="checkbox" id="log" ${S.log ? 'checked' : ''}> Log scale</label></div>`;
-
-P.central = () => {
-  const gs = groupedStats(S.variable, S.group, S.topN), vname = VARS[S.variable];
-  if (!gs.length) return head('Central tendency', '') + '<div class="alert">No values for this measure under the current filters.</div>';
-  const all = describe(F.map((r) => valueOf(r, S.variable)).filter((v) => v != null && !isNaN(v)));
-  const ratio = all.mean / all.median, best = gs.slice().sort((a, b) => b.d.median - a.d.median)[0];
-  return head('Central tendency', 'What a “typical” record looks like — the mean, the median and the most common value — overall and by group.') + statCtrls() +
-    takeaways([`Across all selected records the mean ${vname.toLowerCase()} is <b>${fmt(all.mean)}</b> but the median is only <b>${fmt(all.median)}</b>${isFinite(ratio) ? ` — the mean is ${num(ratio, 1)}× the median` : ''}.`,
-      `Most common value (mode): <b>${fmt(all.mode)}</b>.`, `Highest typical (median) ${vname.toLowerCase()} among the ${GROUPS[S.group].toLowerCase()}s shown: <b>${esc(best.name)}</b> (${fmt(best.d.median)}).`,
-      ratio > 1.5 ? 'When the mean sits far above the median, a few huge records pull the average up — describe the typical record with the median.' : '']) +
-    grid('one', card({ title: `Mean vs median ${vname.toLowerCase()} by ${GROUPS[S.group].toLowerCase()}`, sub: `The ${S.topN} groups with the most records`, height: 360,
-      plot: { traces: [{ type: 'bar', name: 'Mean', x: gs.map((g) => g.name), y: gs.map((g) => g.d.mean), marker: { color: PAL[0] } }, { type: 'bar', name: 'Median', x: gs.map((g) => g.name), y: gs.map((g) => g.d.median), marker: { color: PAL[1] } }],
-        layout: { barmode: 'group', yaxis: { type: S.log ? 'log' : 'linear', title: vname }, xaxis: { tickangle: -30 } } },
-      tbl: { headers: [GROUPS[S.group], 'Records', 'Mean', 'Median', 'Mode', 'Mean ÷ median'], rows: gs.map((g) => [esc(g.name), int(g.d.n), fmt(g.d.mean), fmt(g.d.median), fmt(g.d.mode), isFinite(g.d.mean / g.d.median) ? num(g.d.mean / g.d.median, 1) : '–']) },
-      how: 'For each group, the green bar is the mean (the arithmetic average) and the amber bar is the median (the middle record). When the bars are close the group is balanced; when the mean is far above the median a few very large records are pulling the average up.',
-      insight: (() => { const r = gs.filter((g) => isFinite(g.d.mean / g.d.median)).sort((a, b) => b.d.mean / b.d.median - a.d.mean / a.d.median)[0]; return `${r ? `The most skewed group is <b>${esc(r.name)}</b>, whose mean is ${num(r.d.mean / r.d.median, 1)}× its median. ` : ''}The group with the highest typical value is <b>${esc(best.name)}</b> (median ${fmt(best.d.median)}).`; })(),
-      caution: 'Crop production data is strongly right-skewed, so the median is the more honest description of a typical record. The log scale keeps both bars visible.' }));
-};
-
-P.spread = () => {
-  const gs = groupedStats(S.variable, S.group, S.topN), vname = VARS[S.variable];
-  if (!gs.length) return head('Spread & shape', '') + '<div class="alert">No values for this measure under the current filters.</div>';
-  let vals = F.map((r) => valueOf(r, S.variable)).filter((v) => v != null && !isNaN(v)); if (S.log) vals = vals.filter((v) => v > 0);
-  if (vals.length < 5) return head('Spread & shape', '') + statCtrls() + '<div class="alert">Not enough positive values for this measure.</div>';
-  const d = describe(vals), plotV = S.log ? vals.map(Math.log10) : vals;
-  const mostVar = gs.filter((g) => isFinite(g.d.cv)).sort((a, b) => b.d.cv - a.d.cv)[0];
-  const boxes = gs.map((g, i) => ({ type: 'box', name: g.name, q1: [g.d.q1], median: [g.d.median], q3: [g.d.q3], lowerfence: [g.d.wl], upperfence: [g.d.wh], mean: [g.d.mean], boxmean: true, marker: { color: PAL[i % 10] } }));
-  return head('Spread & shape', 'How widely records vary, how lopsided the distribution is, and how many extreme values there are.') + statCtrls() +
-    takeaways([`Records span ${fmt(d.min)} to ${fmt(d.max)}; the middle 50% sit between <b>${fmt(d.q1)}</b> and <b>${fmt(d.q3)}</b> (IQR ${fmt(d.iqr)}).`,
-      `Skewness ${num(d.skew, 1)} — <b>${shapeWord(d.skew)}</b>; excess kurtosis ${num(d.kurt, 1)} (${d.kurt > 3 ? 'heavy tails' : 'light tails'}).`,
-      `${int(d.outliers)} records (${pct(share(d.outliers, d.n))}) fall outside the 1.5×IQR fences.`, mostVar ? `Most variable group (CV): <b>${esc(mostVar.name)}</b> at ${num(mostVar.d.cv)}.` : '']) +
-    grid('', card({ title: `Distribution of ${vname.toLowerCase()}${S.log ? ' (log10)' : ''}`, plot: { traces: [{ type: 'histogram', x: plotV, nbinsx: 60, marker: { color: PAL[0] } }], layout: { xaxis: { title: S.log ? `log10(${vname})` : vname }, yaxis: { title: 'Records' } } },
-        how: 'Bars count records in each value range. On the log axis a bell shape means log-normal data.', insight: `The middle 50% of records lie between ${fmt(d.q1)} and ${fmt(d.q3)}, a spread (IQR) of ${fmt(d.iqr)} against a median of ${fmt(d.median)}. The mean (${fmt(d.mean)}) is ${d.mean > 1.5 * d.median ? 'well above' : 'close to'} the median, and the distribution is ${shapeWord(d.skew)} with ${d.kurt > 3 ? 'heavy tails, meaning extreme values are common' : 'light tails'}.`,
-        caution: 'On the log axis zeros are removed because the logarithm of zero cannot be calculated; turn the log scale off to include them.' }),
-      card({ title: `Spread by ${GROUPS[S.group].toLowerCase()}`, sub: 'Box = middle 50%, line = median, dashed = mean', plot: { traces: boxes, layout: { yaxis: { type: S.log ? 'log' : 'linear', title: vname }, showlegend: false, xaxis: { tickangle: -30 } } },
-        how: 'Each box spans the middle 50% of a group’s records (Q1 to Q3), the line inside is the median, the dashed line is the mean and the whiskers reach 1.5×IQR. A taller box means more variation inside the group.',
-      insight: (() => { const w = gs.filter((g) => g.d.median > 0).sort((a, b) => b.d.iqr / b.d.median - a.d.iqr / a.d.median)[0]; return `${w ? `<b>${esc(w.name)}</b> has the widest relative spread (IQR is ${num(w.d.iqr / w.d.median, 1)}× its median). ` : ''}Compare box heights rather than positions to judge variability.`; })(),
-      caution: 'Groups with few records give unstable boxes; the table below lists record counts.' })) +
-    grid('one', card({ title: 'Dispersion table', html: table([GROUPS[S.group], 'Records', 'Std dev', 'CV', 'IQR', 'Range', 'Skewness', 'Kurtosis', 'Outliers'],
-      gs.map((g) => [esc(g.name), int(g.d.n), fmt(g.d.sd), num(g.d.cv), fmt(g.d.iqr), fmt(g.d.range), num(g.d.skew, 1), num(g.d.kurt, 1), `${int(g.d.outliers)} (${pct(share(g.d.outliers, g.d.n))})`])),
-      how: 'CV (coefficient of variation) = std dev ÷ mean, so groups of different size can be compared.', insight: (() => { const o = gs.slice().sort((a, b) => b.d.outliers / b.d.n - a.d.outliers / a.d.n)[0]; return `${esc(o.name)} has the highest share of outliers (${pct(share(o.d.outliers, o.d.n))}). A CV above 1 means the standard deviation exceeds the mean, a sign of a very uneven group.`; })(),
-      caution: 'Outliers here are mostly large districts or high-volume crops rather than errors, so they were kept in the analysis.' }));
-};
-
-P.relations = () => {
-  const ok = F.filter((r) => r.a != null && r.p != null);
-  if (ok.length < 4) return head('Relationships', '') + '<div class="alert">Not enough records.</div>';
-  const pairs = S.log ? ok.filter((r) => r.a > 0 && r.p > 0) : ok;
-  const sample = pairs.length > 15000 ? pairs.filter(() => Math.random() < 15000 / pairs.length) : pairs;
-  const gmap = new Map(); for (const r of sample) { const k = r[S.scatterBy]; (gmap.get(k) || gmap.set(k, []).get(k)).push(r); }
-  const order = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length), keep = order.slice(0, 10), rest = order.slice(10).flatMap((e) => e[1]);
-  if (rest.length) keep.push(['Other', rest]);
-  const traces = keep.map(([k, rows], i) => ({ type: 'scattergl', mode: 'markers', name: k, x: rows.map((r) => r.a), y: rows.map((r) => r.p), text: rows.map((r) => `${r.c} · ${r.s} · ${r.y}`), marker: { size: 4, opacity: .5, color: PAL[i % 10] } }));
-  const ax = ok.map((r) => r.a), py = ok.map((r) => r.p), pr = pearson(ax, py), sp = spearman(ax, py);
-  const yr = ok.filter((r) => r.y != null), ay = yr.map((r) => r.y), aa = yr.map((r) => r.a), ap = yr.map((r) => r.p);
-  const nm = ['Crop year', 'Area', 'Production'], mat = [[1, pearson(ay, aa), pearson(ay, ap)], [pearson(aa, ay), 1, pr], [pearson(ap, ay), pr, 1]];
-  const sa = Float64Array.from(ax).sort(), cuts = [0.25, 0.5, 0.75].map((q) => quantile(sa, q));
-  const bands = ['Smallest 25%', '25–50%', '50–75%', 'Largest 25%'].map((l) => ({ l, v: [] }));
-  for (const r of ok) bands[r.a <= cuts[0] ? 0 : r.a <= cuts[1] ? 1 : r.a <= cuts[2] ? 2 : 3].v.push(r.p);
-  const bm = bands.map((b) => ({ l: b.l, n: b.v.length, med: quantile(Float64Array.from(b.v).sort(), .5) }));
-  return head('Relationships', 'Does cultivating more land mean producing more? Two correlation measures, a scatter and a land-size comparison.') +
-    `<div class="ctrls"><label>Colour dots by <select id="scatterBy">${Object.entries(GROUPS).map(([k, v]) => `<option value="${k}" ${k === S.scatterBy ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label><input type="checkbox" id="log" ${S.log ? 'checked' : ''}> Log axes</label></div>` +
-    takeaways([`Pearson r = <b>${pr.toFixed(2)}</b> (${strength(pr)}); Spearman ρ = <b>${sp.toFixed(2)}</b> (${strength(sp)}).`,
-      sp - pr > .3 ? 'Spearman is much higher than Pearson: a few extreme records (often coconut) hide a genuine rank-order link — bigger area generally means more production.' : 'The two measures broadly agree.',
-      `Median production climbs from ${fmt(bm[0].med)} (smallest-area quarter) to ${fmt(bm[3].med)} (largest-area quarter).`]) +
-    grid('wide', card({ title: 'Area vs production', sub: `Sample of up to 15,000 of ${int(pairs.length)} records`, height: 440, plot: { traces, layout: { xaxis: { title: 'Area (ha)', type: S.log ? 'log' : 'linear' }, yaxis: { title: 'Production', type: S.log ? 'log' : 'linear' }, margin: { b: 100 } } },
-        how: 'One dot per crop-district-season-year record. A cloud rising to the right means more land goes with more output.', insight: `The cloud rises to the right, and the rank-based Spearman ρ of ${sp.toFixed(2)} is ${strength(sp)}: larger plots generally produce more. The linear Pearson r of ${pr.toFixed(2)} is ${strength(pr)} because a few very large records distort a straight-line fit. Dots far below the cloud are low-yield records; far above are high-yield.`,
-        caution: 'Correlation shows association, not cause. Different crops use different units, which spreads the cloud sideways.' }),
-      card({ title: 'Correlation matrix', sub: 'Pearson', height: 300, plot: { traces: [{ type: 'heatmap', x: nm, y: nm, z: mat, zmin: -1, zmax: 1, colorscale: [[0, '#c4572f'], [.5, '#f6f3ea'], [1, '#2f7d4f']], text: mat.map((r) => r.map((v) => v.toFixed(2))), texttemplate: '%{text}' }], layout: { yaxis: { autorange: 'reversed' }, margin: { l: 80, t: 10, b: 40, r: 10 } } },
-        how: '+1 / −1 is a perfect straight-line link; 0 is none.', insight: `Area and production: ${pr.toFixed(2)}. Year and production: ${mat[0][2].toFixed(2)}, and year and area: ${mat[0][1].toFixed(2)}. Values this close to zero for year mean the calendar year alone explains almost none of the variation.`,
-      caution: 'Pearson only captures straight-line relationships; the Spearman value above is the better guide here.' })) +
-    grid('one', card({ title: 'Median production by farm-size band', sub: 'Records split into quarters by cultivated area', height: 300,
-      plot: { traces: [{ type: 'bar', x: bm.map((b) => b.l), y: bm.map((b) => b.med), text: bm.map((b) => fmt(b.med)), textposition: 'outside', marker: { color: PAL.slice(0, 4) } }], layout: { yaxis: { title: 'Median production' } } },
-      tbl: { headers: ['Area band', 'Records', 'Median production'], rows: bm.map((b) => [b.l, int(b.n), fmt(b.med)]) },
-      how: 'A plain-language view of the same relationship: bigger plots, bigger typical output.', insight: `The typical record in the largest-area quarter produces <b>${num(bm[3].med / Math.max(bm[0].med, 1), 1)}×</b> as much as one in the smallest-area quarter (${fmt(bm[3].med)} vs ${fmt(bm[0].med)}). Each step up in land size lifts typical output${bm[0].med < bm[1].med && bm[1].med < bm[2].med && bm[2].med < bm[3].med ? ', and the climb is steady across all four bands.' : ', although not every step is higher.'}`,
-      caution: 'Medians are used so outliers cannot distort the comparison, but larger plots also tend to be different crops, so size is not the only driver.' }));
-};
-
-P.quality = () => {
-  const removed = RAW.length - CLEAN.length, cnt = (rows, f) => { let c = 0; for (const r of rows) if (f(r)) c++; return c; };
+P.notes = () => {
+  const removed = RAW.length - CLEAN.length;
   const seen = new Set(); let dups = 0;
   for (const r of RAW) { const k = `${r.s}|${r.d}|${r.y}|${r.se}|${r.c}|${r.a}|${r.p}`; if (seen.has(k)) dups++; else seen.add(k); }
-  const nulls = Object.entries(RAW_NULLS);
-  const checks = [['Negative area', (r) => r.a < 0], ['Negative production', (r) => r.p < 0], ['Zero area', (r) => r.a === 0], ['Zero production', (r) => r.p === 0]].map(([l, f]) => [l, int(cnt(RAW, f)), int(cnt(CLEAN, f))]);
-  const outs = [['Area', (r) => r.a], ['Production', (r) => r.p]].map(([l, g]) => { const d = describe(CLEAN.map(g).filter((v) => v != null)); return [l, num(d.q1 - 1.5 * d.iqr), fmt(d.q3 + 1.5 * d.iqr), `${int(d.outliers)} (${pct(share(d.outliers, d.n), 1)})`]; });
-  const yc = new Map(); for (const r of RAW) yc.set(r.y, (yc.get(r.y) || 0) + 1); const ycs = [...yc.entries()].sort((a, b) => a[0] - b[0]);
-  return head('Data quality', 'What was checked, what was removed, and what was deliberately kept.') +
-    takeaways([`Raw file: <b>${int(RAW.length)}</b> rows. After cleaning: <b>${int(CLEAN.length)}</b> (${int(removed)} removed, ${pct(share(removed, RAW.length), 2)}).`,
-      `Only <b>Production</b> had missing values — those rows cannot contribute to production totals, so they were dropped. ${dups ? int(dups) + ' duplicate rows found.' : 'No duplicate rows.'}`, 'Zero-production rows are kept as valid observations (a failed or unreported harvest); say so when reporting.']) +
-    `<div class="kpis">${kpi('Raw rows', int(RAW.length))}${kpi('Cleaned rows', int(CLEAN.length))}${kpi('Rows removed', int(removed), 'missing Production')}${kpi('Duplicate rows', int(dups), 'in raw data')}</div>` +
+  const nulls = Object.entries(RAW_NULLS), zeros = CLEAN.reduce((c, r) => c + (r.p === 0 ? 1 : 0), 0);
+  const cols = [['State_Name', 'Text', 'Indian state where the crop is grown'], ['District_Name', 'Text', 'District within the state'], ['Crop_Year', 'Integer', 'Year of the agricultural record'],
+    ['Season', 'Text', 'Kharif, Rabi, Summer, Autumn, Winter or Whole Year'], ['Crop', 'Text', 'Crop cultivated (124 types)'], ['Area', 'Number', 'Cultivated land area in hectares'], ['Production', 'Number', 'Quantity produced (unit depends on the crop)']];
+  return head('Data notes', 'How the numbers were prepared, and how far they can be trusted.') +
+    `<div class="kpis">${kpi('Raw rows', int(RAW.length))}${kpi('Cleaned rows', int(CLEAN.length))}${kpi('Rows removed', int(removed), 'missing Production')}${kpi('Duplicate rows', int(dups), 'in raw data')}${kpi('Zero-production rows', int(zeros), 'kept as valid values')}</div>` +
     grid('', card({ title: 'Completeness by column', height: 300, plot: { traces: [{ type: 'bar', orientation: 'h', x: nulls.map(([, n]) => (1 - n / RAW.length) * 100), y: nulls.map((e) => e[0]), text: nulls.map(([, n]) => ((1 - n / RAW.length) * 100).toFixed(2) + '%'), textposition: 'outside', cliponaxis: false, marker: { color: PAL[0] } }], layout: { xaxis: { range: [90, 101], title: '% complete' }, yaxis: { autorange: 'reversed' }, margin: { l: 110, r: 50, t: 8, b: 40 } } },
-        tbl: { headers: ['Column', 'Missing', '% missing'], rows: nulls.map(([c, n]) => [c, int(n), pct(n / RAW.length, 2)]) }, how: 'Share of rows with a value, per column (axis starts at 90%).', insight: (() => { const m = new Map(); for (const r of RAW) if (r.p == null) m.set(r.y, (m.get(r.y) || 0) + 1); const t = [...m.entries()].sort((a, b) => b[1] - a[1])[0]; return `${int(RAW_NULLS.Production)} rows (${pct(RAW_NULLS.Production / RAW.length, 2)}) lack a Production value${t ? `, most of them in ${t[0]} (${int(t[1])} rows)` : ''}. Every other column is 100% complete.`; })(),
-        caution: 'Dropping these rows removes any chance of counting their area, so area totals on the cleaned data are slightly lower than on the raw data.' }),
-      card({ title: 'Records per crop year', height: 300, plot: { traces: [{ type: 'bar', x: ycs.map((e) => e[0]), y: ycs.map((e) => e[1]), marker: { color: PAL[2] } }], layout: { yaxis: { title: 'Records' } } },
-        tbl: { headers: ['Year', 'Records'], rows: ycs.map((e) => [e[0], int(e[1])]) }, how: 'Raw record count per year — a proxy for reporting coverage.', insight: `Coverage ranges from ${int(minOf(ycs.map((e) => e[1])))} records in ${ycs.find((e) => e[1] === minOf(ycs.map((x) => x[1])))[0]} to ${int(maxOf(ycs.map((e) => e[1])))} in ${ycs.find((e) => e[1] === maxOf(ycs.map((x) => x[1])))[0]}. Years with far fewer records explain the sharp edges in the trend lines.`,
-        caution: 'Record counts measure reporting coverage, not production; a year with fewer records will almost always show lower totals.' })) +
-    grid('', card({ title: 'Invalid-value checks', html: table(['Check', 'Raw', 'Cleaned'], checks), how: 'Counts of impossible or questionable values.', insight: `There are ${int(cnt(CLEAN, (r) => r.p === 0))} zero-production rows (${pct(share(cnt(CLEAN, (r) => r.p === 0), CLEAN.length), 2)} of cleaned data) and no negative values. Zero area never occurs, so yield can be calculated for every record.`,
-      caution: 'A zero may mean a failed harvest or an unreported one; they are kept and flagged here so the choice is transparent.' }),
-      card({ title: 'Outlier fences (cleaned data)', html: table(['Variable', 'Lower fence', 'Upper fence', 'Outliers'], outs), how: 'Fences are Q1 − 1.5×IQR and Q3 + 1.5×IQR.', insight: `${outs.map((o) => `${o[0]}: ${o[3]}`).join('; ')} flagged as outliers. Crop data is strongly skewed, so the IQR rule flags a large share of records.`,
-      caution: 'Outliers were retained because large districts and perennial crops such as coconut are legitimate values, not errors.' }));
+        tbl: { headers: ['Column', 'Missing', '% missing'], rows: nulls.map(([c, n]) => [c, int(n), pct(n / RAW.length, 2)]) }, how: 'Share of rows with a value, per column (axis starts at 90%).',
+        insight: `${int(RAW_NULLS.Production)} rows (${pct(RAW_NULLS.Production / RAW.length, 2)}) lack a Production value; every other column is 100% complete. Those rows cannot contribute to production totals, so the cleaned file drops them. Raw therefore always has more rows than Cleaned.`,
+        caution: 'Dropping these rows also removes their area, so area totals on the cleaned data are slightly lower than on the raw data.' }),
+      card({ title: 'Fields', html: table(['Column', 'Type', 'Description'], cols) })) +
+    grid('', card({ title: 'How measures are calculated', html: '<dl class="dict"><dt>Yield</dt><dd>Production ÷ Area; for a group, total production ÷ total area.</dd><dt>Annual growth</dt><dd>Compound annual growth rate of yearly totals. The sparsely reported first and last years are skipped.</dd><dt>Variation (CV)</dt><dd>Standard deviation ÷ mean of the yearly totals. Lower means steadier.</dd><dt>Crops for 80% of output</dt><dd>How many crops, largest first, are needed to reach 80% of production.</dd><dt>Ratings</dt><dd>Rules of thumb, listed under the scorecard.</dd></dl>' }),
+      card({ title: 'Cleaning & limitations', html: '<dl class="dict"><dt>Cleaning</dt><dd>Column names and text trimmed, types fixed, rows with missing Production removed.</dd><dt>Kept</dt><dd>Zero values and outliers (large districts and perennial crops are legitimate).</dd><dt>Units</dt><dd>Production is not in one common unit: coconut is counted in nuts. Totals across crops describe recorded volume only.</dd><dt>Scope</dt><dd>No rainfall, soil, irrigation, input, price or farmer data.</dd><dt>Coverage</dt><dd>Reporting is uneven across states and years, so trends at the edges can mislead.</dd></dl>' }));
 };
 
-const csvOf = (rows) => 'State_Name,District_Name,Crop_Year,Season,Crop,Area,Production\n' + rows.map((r) => [r.s, r.d, r.y, r.se, r.c, r.a, r.p].map((v) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(',')).join('\n');
-function recordRows() {
-  let rows = { filtered: F, raw: RAW, clean: CLEAN }[S.recView];
-  if (S.recSearch) { const t = S.recSearch.toLowerCase(); rows = rows.filter((r) => `${r.s} ${r.d} ${r.y} ${r.se} ${r.c}`.toLowerCase().includes(t)); }
-  return rows;
-}
-P.records = () => {
-  const rows = recordRows(), per = 25, pages = Math.max(1, Math.ceil(rows.length / per)); S.recPage = Math.min(S.recPage, pages - 1);
-  const slice = rows.slice(S.recPage * per, S.recPage * per + per), rd = (v, l) => `<label><input type="radio" name="rv" value="${v}" ${S.recView === v ? 'checked' : ''}> ${l}</label>`;
-  return head('Records', 'The exact rows behind every chart. Switch between the filtered view, the full raw file and the full cleaned file.') +
-    `<div class="card"><div class="ctrls">${rd('filtered', 'Filtered selection')}${rd('raw', 'Raw (all)')}${rd('clean', 'Cleaned (all)')}<input type="text" id="recSearch" placeholder="Search state, district, crop, season…" value="${esc(S.recSearch)}"><button class="btn dl" id="dl">⬇ Download CSV</button></div>
-    ${table(['State', 'District', 'Year', 'Season', 'Crop', 'Area (ha)', 'Production'], slice.map((r) => [esc(r.s), esc(r.d), r.y, esc(r.se), esc(r.c), r.a == null ? '' : num(r.a), r.p == null ? '–' : num(r.p)]))}
-    <div class="pager"><button id="prev" ${S.recPage === 0 ? 'disabled' : ''}>← Prev</button><span>Page ${S.recPage + 1} of ${int(pages)} · ${int(rows.length)} rows</span><button id="next" ${S.recPage >= pages - 1 ? 'disabled' : ''}>Next →</button></div></div>`;
+/* ------------------------------------------------------------ advanced model (computed in the notebook, Sections 15–16; stored in model.js) */
+const MODEL_PAGES = new Set(['predict', 'reco']);
+const missingModel = (t) => head(t, '') + '<div class="alert">model.js is missing — keep it in the same folder as index.html.</div>';
+const FEATURE_NAME = { State_Name: 'State', Crop: 'Crop', Season: 'Season', Crop_Year: 'Crop year', log_area: 'Area planted' };
+
+P.predict = () => {
+  const m = window.MODEL; if (!m) return missingModel('Predict yield');
+  const { model: a, baseline: b } = m.metrics, sp = m.split, gain = 1 - a.mae_log / b.mae_log;
+  const apes = m.crop_error.map((e) => e.median_ape), imp = m.importance.slice().sort((x, y) => y.importance - x.importance);
+  return head('Predict yield', 'A Gradient Boosting model predicts the yield (production per hectare) of a crop in a state and season. It was trained on earlier years and tested on later years it had never seen.') +
+    `<div class="kpis">${kpi('Accuracy (R²)', a.r2.toFixed(2), `crop-average baseline: ${b.r2.toFixed(2)}`)}${kpi('Error reduction', pct(gain, 0), 'lower average error than the baseline')}` +
+    `${kpi('Typical error', `${pct(minOf(apes), 0)}–${pct(maxOf(apes), 0)}`, 'median error for the main crops')}${kpi('Tested on', int(sp.test_rows), `records from ${sp.test_years}`)}${kpi('Trained on', int(sp.train_rows), `records from ${sp.train_years}`)}</div>` +
+    takeaways([`<b>It works:</b> on years it had never seen, the model explains R² = ${a.r2.toFixed(2)} of the variation in yield and cuts the average error by <b>${pct(gain, 0)}</b> compared with simply using each crop's average.`,
+      `<b>What drives yield:</b> ${esc(FEATURE_NAME[imp[0].feature])} matters most, then ${esc(FEATURE_NAME[imp[1].feature].toLowerCase())}. Season and area add little, and crop year adds nothing, so the data shows no steady yield trend over time.`,
+      `<b>How to use it:</b> predictions are accurate to roughly ${pct(minOf(apes), 0)}–${pct(maxOf(apes), 0)} for the main crops, so use them to <b>rank and compare</b> states and crops, not as exact forecasts.`]) +
+    grid('', card({ title: 'Model vs baseline', sub: 'Error on the test years (lower is better)', height: 320,
+        plot: { traces: [{ type: 'bar', name: 'Baseline (crop average)', x: ['MAE', 'RMSE'], y: [b.mae_log, b.rmse_log], marker: { color: PAL[7] } }, { type: 'bar', name: 'Gradient Boosting', x: ['MAE', 'RMSE'], y: [a.mae_log, a.rmse_log], marker: { color: PAL[0] } }], layout: { barmode: 'group', yaxis: { title: 'Error (log scale of yield)' } } },
+        tbl: { headers: ['Measure', 'Baseline', 'Gradient Boosting'], rows: [['R²', b.r2.toFixed(3), a.r2.toFixed(3)], ['MAE (log)', b.mae_log.toFixed(3), a.mae_log.toFixed(3)], ['RMSE (log)', b.rmse_log.toFixed(3), a.rmse_log.toFixed(3)]] },
+        how: 'The baseline guesses each crop’s average yield. The model also uses state, season, area and year. MAE is the average miss and RMSE punishes big misses more; shorter bars are better.',
+        insight: `The model's average miss is ${a.mae_log.toFixed(2)} against ${b.mae_log.toFixed(2)} for the baseline, a ${pct(gain, 0)} improvement. R² rises from ${b.r2.toFixed(2)} to ${a.r2.toFixed(2)}.`,
+        caution: 'Most of the variation in yield is explained just by knowing which crop it is, so the baseline is already strong. The model’s extra value comes from the state.' }),
+      card({ title: 'Actual vs predicted yield', sub: 'A sample of test records (log scale)', height: 320,
+        plot: { traces: [{ type: 'scattergl', mode: 'markers', x: m.scatter.actual, y: m.scatter.pred, text: m.scatter.crop, marker: { size: 4, opacity: .45, color: PAL[2] }, name: 'Records', hovertemplate: '%{text}<br>actual %{x:.2f}, predicted %{y:.2f}<extra></extra>' },
+          { type: 'scatter', mode: 'lines', x: [0, maxOf(m.scatter.actual)], y: [0, maxOf(m.scatter.actual)], line: { color: PAL[3], dash: 'dash' }, name: 'Perfect prediction' }], layout: { xaxis: { title: 'Actual log(1 + yield)' }, yaxis: { title: 'Predicted log(1 + yield)' } } },
+        how: 'Each dot is one district record from 2011–2014. A dot on the dashed line is a perfect prediction; the further away, the bigger the miss.',
+        insight: 'The cloud follows the dashed line closely, with more scatter where yields are very low or very high. The model tracks the level of yield well, but not every year’s ups and downs.',
+        caution: 'Weather, irrigation and inputs are not in the data, so the model cannot explain a bad or a bumper year.' })) +
+    grid('', card({ title: 'What drives yield', sub: 'Drop in accuracy when the feature is shuffled', height: 300,
+        plot: { traces: [hbar(imp.map((e) => [FEATURE_NAME[e.feature], e.importance]), PAL[1])], layout: hbarLayout() },
+        tbl: { headers: ['Feature', 'Importance'], rows: imp.map((e) => [FEATURE_NAME[e.feature], e.importance.toFixed(3)]) },
+        how: 'Each feature is scrambled in turn and the fall in R² is recorded. A longer bar means the model leans on that feature more.',
+        insight: `${esc(FEATURE_NAME[imp[0].feature])} dominates, followed by ${esc(FEATURE_NAME[imp[1].feature].toLowerCase())}. Crop year is about zero, so there is no clear improvement or decline in yield across 1997–2014.`,
+        caution: 'Crop dominates partly because crops use different units (coconut is counted in nuts). State is the feature a planner can act on.' }),
+      card({ title: 'Typical error by crop', sub: 'Median absolute percentage error, test years', height: 300,
+        plot: { traces: [hbar(m.crop_error.slice().sort((x, y) => x.median_ape - y.median_ape).map((e) => [e.crop, e.median_ape * 100]), PAL[5])], layout: hbarLayout({ xaxis: { title: '% error' } }) },
+        tbl: { headers: ['Crop', 'Test records', 'Median error'], rows: m.crop_error.map((e) => [esc(e.crop), int(e.n), pct(e.median_ape, 1)]) },
+        how: 'For each main crop, the typical (median) gap between predicted and actual yield, as a percentage of the actual yield.',
+        insight: (() => { const ce = m.crop_error.slice().sort((x, y) => x.median_ape - y.median_ape), w = ce[ce.length - 1]; return `${esc(ce[0].crop)} and ${esc(ce[1].crop)} are predicted best (about ${pct(ce[0].median_ape, 0)}–${pct(ce[1].median_ape, 0)} off). ${esc(w.crop)} is hardest at about ${pct(w.median_ape, 0)}.`; })(),
+        caution: 'These errors are for individual district records; they were not measured on state totals.' }));
 };
 
-P.dictionary = () => {
-  const cols = [['State_Name', 'Text', 'Indian state where the crop is grown', 'Andhra Pradesh'], ['District_Name', 'Text', 'District within the state', 'ANANTAPUR'], ['Crop_Year', 'Integer', 'Year of the agricultural record', '2000'],
-    ['Season', 'Text', 'Kharif, Rabi, Summer, Autumn, Winter or Whole Year', 'Kharif'], ['Crop', 'Text', 'Crop cultivated (124 types)', 'Rice'], ['Area', 'Number', 'Cultivated land area in hectares', '35,600'], ['Production', 'Number', 'Quantity produced (unit depends on the crop)', '75,400']];
-  return head('Dictionary', 'Field definitions, how measures are calculated, and the limits of this dataset.') +
-    grid('one', card({ title: 'Fields', html: table(['Column', 'Type', 'Description', 'Example', 'Missing (raw)'], cols.map(([c, t, d, e]) => [c, t, d, e, int(RAW_NULLS[c] ?? 0)])) })) +
-    grid('', card({ title: 'How measures are calculated', html: '<dl class="dict"><dt>Yield</dt><dd>Production ÷ Area for a record; for a group, total production ÷ total area.</dd><dt>Median</dt><dd>The middle value — robust to extreme records.</dd><dt>CV</dt><dd>Standard deviation ÷ mean; compares variability between groups of different size.</dd><dt>IQR</dt><dd>Q3 − Q1, the spread of the middle 50%.</dd><dt>Outlier</dt><dd>A value below Q1 − 1.5×IQR or above Q3 + 1.5×IQR.</dd><dt>Pearson / Spearman</dt><dd>Linear vs rank correlation; Spearman resists outliers.</dd></dl>' }),
-      card({ title: 'Cleaning & limitations', html: '<dl class="dict"><dt>Cleaning</dt><dd>Column names trimmed, text trimmed, types fixed, rows with missing Production removed.</dd><dt>Kept</dt><dd>Zero values and outliers.</dd><dt>Units</dt><dd>Production is not in one common unit — coconut is counted in nuts. Totals across crops describe recorded volume only.</dd><dt>Scope</dt><dd>No rainfall, soil, irrigation, input, price or farmer data.</dd><dt>Coverage</dt><dd>Reporting is uneven across states and years, so trends at the edges can mislead.</dd></dl>' }));
+P.reco = () => {
+  const m = window.MODEL; if (!m) return missingModel('Recommend');
+  const all = m.reco, states = [...new Set(all.map((r) => r.state))].sort();
+  const sel = states.includes(S.recoState) ? S.recoState : '';
+  const exp = all.filter((r) => r.action === 'Expand').length, red = all.filter((r) => r.action === 'Reduce').length;
+  const gains = m.state_gain, g = sel ? gains.find((e) => e.state === sel) : gains[0];
+  const rows = sel ? all.filter((r) => r.state === sel).sort((x, y) => y.change - x.change || y.index - x.index)
+    : all.filter((r) => r.action === 'Expand').sort((x, y) => y.index - x.index).slice(0, 12);
+  const aTag = (a) => (a === 'Expand' ? tag('good', a) : a === 'Reduce' ? tag('warn', a) : tag('', a));
+  const tbl = table([...(sel ? [] : ['State']), 'Season', 'Crop', 'Action', 'Area now (ha/yr)', 'Recommended', 'Change', 'Yield index', 'Yield variation'],
+    rows.map((r) => [...(sel ? [] : [esc(r.state)]), esc(r.season), esc(r.crop), aTag(r.action), fmt(r.area_now), fmt(r.area_new), (r.change > 0 ? '+' : '') + pct(r.change, 0), num(r.index), r.cv == null ? '–' : num(r.cv)]));
+  const moved = rows.filter((r) => r.action !== 'Hold');
+  const chart = sel && !moved.length
+    ? card({ title: `Recommended change in area: ${esc(sel)}`, html: '<p class="sub" style="padding:6px 2px">No crop in this state differs enough from the typical state (yield index 1.10 or above, or 0.90 or below) to justify moving land, so every crop is held.</p>' })
+    : sel ? card({ title: `Recommended change in area: ${esc(sel)}`, sub: 'Crops that move (at most ±25% each)', height: Math.max(240, 70 + moved.length * 26),
+      plot: { traces: [{ type: 'bar', orientation: 'h', x: moved.map((r) => r.change * 100), y: moved.map((r) => `${r.crop} (${r.season})`), marker: { color: moved.map((r) => (r.action === 'Expand' ? PAL[0] : PAL[3])) }, hovertemplate: '%{y}: %{x:.0f}%<extra></extra>' }], layout: { yaxis: { autorange: 'reversed', automargin: true }, xaxis: { title: '% change in area' }, margin: { l: 10, r: 20, t: 8, b: 40 } } },
+      how: 'Green bars are crops where the state is expected to out-yield the typical state, so the plan adds area. Rust bars are crops where it is expected to under-perform, so the plan trims area.',
+      insight: `${esc(sel)} would gain about <b>${pct(g.gain, 1)}</b> in area-weighted yield index by following these shifts, with the total area unchanged.`,
+      caution: 'The ±25% and 10% limits are assumptions that keep the plan realistic; they are not measured agronomic limits.' })
+    : card({ title: 'Where reallocation helps most', sub: 'Estimated gain in area-weighted yield index', height: hh(10),
+      plot: { traces: [hbar(gains.slice(0, 10).map((e) => [e.state, e.gain * 100]), PAL[0])], layout: hbarLayout({ xaxis: { title: '% gain' } }) },
+      tbl: { headers: ['State', 'Estimated gain'], rows: gains.map((e) => [esc(e.state), pct(e.gain, 1)]) },
+      how: 'For each state, area is shifted between crops of the same season towards those with a higher yield index. The bar shows how much the area-weighted index rises.',
+      insight: `<b>${esc(gains[0].state)}</b> has the most room (${pct(gains[0].gain, 1)}), followed by ${esc(gains[1].state)} (${pct(gains[1].gain, 1)}) and ${esc(gains[2].state)} (${pct(gains[2].gain, 1)}). Choose a state above to see its crop-by-crop plan.`,
+      caution: 'A bigger gain means more mismatch between current crops and where the state yields best. It does not mean the state is performing badly.' });
+  return head('Recommend', 'Within each state and season, which crops should get more land and which less? Built from the predicted yields on the previous page.') +
+    '<div class="alert"><b>Decision support, not an instruction.</b> The data has no prices, costs, soil, water or climate information, so “better” means a higher predicted yield than other states get for the same crop, not higher profit.</div>' +
+    `<div class="kpis">${kpi('States covered', int(states.length), 'with enough history')}${kpi('Crops to expand', int(exp), 'state-season-crop combinations', '', tag('good', 'Expand'))}${kpi('Crops to reduce', int(red), 'state-season-crop combinations', '', tag('warn', 'Reduce'))}${kpi('Biggest gain', pct(gains[0].gain, 1), esc(gains[0].state))}</div>` +
+    takeaways(['<b>Yield index</b> = predicted 2015 yield ÷ the typical (median) yield of the same crop across states. Above 1 means the state is expected to out-yield the typical state, and the index makes crops with different units comparable.',
+      '<b>Method:</b> a linear program per state and season keeps total area fixed, moves at most 10% of the land, lets each crop change by at most ±25%, and maximizes the area-weighted yield index. Only crops clearly above (index 1.10 or more) or below (0.90 or less) the typical state are moved; the rest are held.',
+      '<b>Check stability first:</b> before expanding a crop, look at its yield variation. Above about 0.3 means the yield has swung a lot from year to year.',
+      'Coconut is left out because it is a perennial crop whose area cannot be shifted from year to year.']) +
+    `<div class="ctrls"><label>State <select id="recoState"><option value="">All states: top opportunities</option>${states.map((s) => `<option ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label></div>` +
+    grid('one', chart) + grid('one', card({ title: sel ? `Crop plan: ${esc(sel)}` : 'Strongest expansion opportunities', sub: sel ? 'Every crop in the state, largest increase first' : 'Highest yield index across all states', html: `<div style="max-height:460px;overflow:auto">${tbl}</div>`,
+      how: 'Area now is the 2010–2014 yearly average. Recommended is the planned area. Yield index above 1 means better than the typical state for that crop; yield variation is the coefficient of variation of the yearly yield.',
+      caution: 'Reducing a crop is a prompt to review support (seed, irrigation, extension), not necessarily to stop growing it.' }));
 };
 
 /* ------------------------------------------------------------ filters & state */
 function options(key) {
-  const base = S.dataset === 'Raw' ? RAW : CLEAN, rows = key === 'd' && S.sel.s.size ? base.filter((r) => S.sel.s.has(r.s)) : base;
-  return [...new Set(rows.map((r) => r[key]))].sort();
+  const base = S.dataset === 'Raw' ? RAW : CLEAN;
+  return [...new Set(base.map((r) => r[key]))].sort();
 }
-const MS_LABEL = { s: 'states', d: 'districts', se: 'seasons', c: 'crops' };
+const MS_LABEL = { s: 'states', se: 'seasons', c: 'crops' };
 function renderMS(key) {
   const host = $('ms-' + key), sel = S.sel[key], opts = options(key); for (const v of [...sel]) if (!opts.includes(v)) sel.delete(v);
   const wasOpen = host.classList.contains('open');
@@ -479,8 +340,8 @@ function renderMS(key) {
   host.querySelector('.ms-search').oninput = (e) => { const q = e.target.value.toLowerCase(); host.querySelectorAll('.ms-list label').forEach((l) => (l.style.display = l.dataset.o.includes(q) ? '' : 'none')); };
   host.querySelectorAll('.ms-list input').forEach((cb) => (cb.onchange = () => { cb.checked ? sel.add(cb.value) : sel.delete(cb.value); changed(); }));
 }
-const renderAllMS = () => ['s', 'd', 'se', 'c'].forEach(renderMS);
-function changed() { clearTimeout(debounce); debounce = setTimeout(() => { S.recPage = 0; renderAllMS(); refresh(); }, 120); }
+const renderAllMS = () => ['s', 'se', 'c'].forEach(renderMS);
+function changed() { clearTimeout(debounce); debounce = setTimeout(() => { renderAllMS(); refresh(); }, 120); }
 
 function paintChips() {
   const chips = [];
@@ -495,7 +356,7 @@ function resetAll() {
 }
 function applyFilters() {
   const base = S.dataset === 'Raw' ? RAW : CLEAN, { sel } = S;
-  F = base.filter((r) => (r.y == null || (r.y >= S.y0 && r.y <= S.y1)) && (!sel.s.size || sel.s.has(r.s)) && (!sel.d.size || sel.d.has(r.d)) && (!sel.se.size || sel.se.has(r.se)) && (!sel.c.size || sel.c.has(r.c)) && !(S.noCoco && r.c === 'Coconut'));
+  F = base.filter((r) => (r.y == null || (r.y >= S.y0 && r.y <= S.y1)) && (!sel.s.size || sel.s.has(r.s)) && (!sel.se.size || sel.se.has(r.se)) && (!sel.c.size || sel.c.has(r.c)) && !(S.noCoco && r.c === 'Coconut'));
   FP = F.filter((r) => r.p != null);
   $('count').textContent = `${int(F.length)} of ${int(base.length)} records`; $('datasetPill').textContent = S.dataset + ' data';
   paintChips();
@@ -506,32 +367,21 @@ function refresh() { applyFilters(); render(); }
 function render() {
   seq = 0; Q = [];
   const el = $('view');
-  if (!F.length) { el.innerHTML = '<div class="alert">No records match the current filters. Clear a filter to continue.</div>'; return; }
-  if (!FP.length && !['records', 'quality', 'dictionary'].includes(S.page)) { el.innerHTML = '<div class="alert">None of the selected records has a production value.</div>'; return; }
+  if (!F.length && !MODEL_PAGES.has(S.page)) { el.innerHTML = '<div class="alert">No records match the current filters. Clear a filter to continue.</div>'; return; }
+  if (!FP.length && !['notes', 'predict', 'reco'].includes(S.page)) { el.innerHTML = '<div class="alert">None of the selected records has a production value.</div>'; return; }
   el.innerHTML = P[S.page]();
   for (const [id, traces, layout] of Q) { const n = $(id); if (n) Plotly.newPlot(n, traces, layoutOf(layout), { responsive: true, displaylogo: false }); }
-  const bind = (id, fn) => { const n = $(id); if (n) n.onchange = fn; };
-  bind('cropFocus', (e) => { S.cropFocus = e.target.value; render(); });
-  bind('variable', (e) => { S.variable = e.target.value; render(); });
-  bind('group', (e) => { S.group = e.target.value; render(); });
-  bind('scatterBy', (e) => { S.scatterBy = e.target.value; render(); });
-  bind('log', (e) => { S.log = e.target.checked; render(); });
-  document.querySelectorAll('input[name=rv]').forEach((i) => (i.onchange = () => { S.recView = i.value; S.recPage = 0; render(); }));
-  const sr = $('recSearch');
-  if (sr) sr.oninput = () => { S.recSearch = sr.value; S.recPage = 0; clearTimeout(debounce); debounce = setTimeout(() => { render(); const n = $('recSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
-  const pv = $('prev'), nx = $('next');
-  if (pv) pv.onclick = () => { S.recPage--; render(); };
-  if (nx) nx.onclick = () => { S.recPage++; render(); };
-  const dl = $('dl');
-  if (dl) dl.onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csvOf(recordRows())], { type: 'text/csv' })); a.download = 'crop_production_view.csv'; a.click(); };
+  const rs = $('recoState');
+  if (rs) rs.onchange = () => { S.recoState = rs.value; render(); };
 }
-const TOPN_PAGES = new Set(['overview', 'trends', 'crops', 'regions', 'seasons', 'central', 'spread']);
+const TOPN_PAGES = new Set(['overview', 'crops', 'regions', 'seasons']);
 function updateTopN() {
   const on = TOPN_PAGES.has(S.page), el = $('topn');
   el.disabled = !on; el.title = on ? 'How many items the top-N charts on this page show' : 'Not used on this page';
 }
 function setPage(p) {
   S.page = p; updateTopN();
+  $('filterbar').style.display = MODEL_PAGES.has(p) ? 'none' : '';   /* model results are computed on the full cleaned data */
   document.querySelectorAll('#nav button').forEach((b) => (b.dataset.p === p ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
   render(); window.scrollTo({ top: 0 });
 }

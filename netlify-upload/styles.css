@@ -166,3 +166,13 @@ dl.dict dt { font-weight: 600; } dl.dict dd { margin: 0; color: var(--ink-2); }
   .hdr-top { padding: 12px 16px 4px; }
   .nav { padding: 4px 8px 0; }
 }
+
+/* planner scorecard: status tags and rating legend */
+:root { --bad: #b8481f; }
+:root[data-theme="dark"] { --bad: #f08a64; }
+.tag { display: inline-block; font-style: normal; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; margin: 2px 0 5px; }
+.tag.good { color: var(--forest-2); }
+.tag.warn { color: var(--amber); }
+.tag.bad { color: var(--bad); }
+.kpi small { display: block; }
+.legend { color: var(--muted); font-size: 12px; margin: -6px 0 18px; max-width: 110ch; }
